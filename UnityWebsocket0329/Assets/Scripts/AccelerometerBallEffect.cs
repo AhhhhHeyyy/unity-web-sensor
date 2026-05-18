@@ -11,6 +11,7 @@ using UnityEngine;
 ///   Unity X（直立） = gDevice.x     （左右傾斜，重力投影；持續量）
 ///   Unity Z（直立） = worldAcc.y    （前後推力，線性加速度；瞬時量）
 ///   Unity X（平放） = gDevice.x     （左右傾斜，重力投影；持續量）
+///   Unity Y（平放） = gDevice.y     （前後傾斜，重力投影；持續量）← 傾斜→持續；對稱 X 軸
 ///   Unity Z（平放） = worldAcc.y    （前後推力，線性加速度；瞬時量）
 ///
 /// 直立與平放模式參數完全分離，各自獨立微調。
@@ -293,6 +294,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     private float _flatZVelInt  = 0f;  // 速度積分值（含阻尼，無位置累積）
     private float _kalmanZState = 0f;
     private float _kalmanZCov   = 1f;
+    private float _flatZIntegBlockTimer = 0f; // 切入平放後暫時封鎖積分，防止翻轉加速度積分成持續速度
 
     private float _zAnchorOffset    = 0f; // Z 軸持續錨點（Unity 米）
     private float _zImpulseFiltered = 0f; // 衝量偵測快速 EMA
@@ -372,9 +374,11 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             }
             else
             {
-                // 平放模式：X 用重力投影（持續量，穩定），Z 由 HandleAcceleration 填入線性加速（瞬時量）
+                // 平放模式：X/Y 用重力投影（持續量，穩定），Z 由 HandleAcceleration 填入線性加速（瞬時量）
+                // Y = gDevice.y（前後傾斜）對稱 X = gDevice.x（左右傾斜）→ 傾斜持續量
                 _gravX = gDevice.x;
                 rawAcceleration.x = _gravX + _linX * flatLinearBlendX;
+                rawAcceleration.y = gDevice.y;
                 // rawAcceleration.z → HandleAcceleration 用 worldAcc.y 填入
             }
 
@@ -425,13 +429,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         else if (hasOrientationData && phoneIsFlat)
         {
             Vector3 worldAcc = currentOrientation * acc;
-            // X：重力傾斜（持續量）+ 可選線性混入
+            // X：重力傾斜（持續量）+ 可選線性混入（HandleGyroscopeData 已設定 rawAcceleration.y = gDevice.y）
             _linX = worldAcc.x;
             rawAcceleration.x = _gravX + _linX * flatLinearBlendX;
             // Z：前後線性加速（瞬時量），與直立 Z 同語義；限幅防止甩動暴衝
             rawAcceleration.z = Mathf.Clamp(worldAcc.y, -flatLinZClamp, flatLinZClamp);
-            // Y：垂直方向線性加速（上下晃動）
-            rawAcceleration.y = worldAcc.z;
+            // Y 不在此更新：由 HandleGyroscopeData 以 gDevice.y（前後傾斜持續量）負責
         }
         else if (!hasOrientationData)
         {
@@ -496,10 +499,15 @@ public partial class AccelerometerBallEffect : MonoBehaviour
                 // 若尚未在平放模式下校正過，退回使用當前重力（避免初次進入時爆衝）
                 bool hasFlatTare = savedTareFlat != Vector3.zero || hasCalibrated;
                 var  useTare     = hasFlatTare ? savedTareFlat
-                                               : new Vector3(debugGDevice.x, 0f, debugGDevice.y);
+                                               : new Vector3(debugGDevice.x, debugGDevice.y, 0f);
                 filteredAcceleration   = useTare;
                 calibratedAcceleration = useTare;
-                rawAcceleration.y      = 0f;
+                // Y 由 HandleGyroscopeData 的 gDevice.y 驅動，此處以當前值初始化以減少 EMA 追蹤距離
+                rawAcceleration.y = debugGDevice.y;
+                // Z 積分模式：清除殘留的直立 Z 值，防止切換瞬間積分暴衝
+                rawAcceleration.z = 0f;
+                // 封鎖積分 0.4s：等翻轉手機的慣性動作平息後再啟動，防止翻轉加速度積分成持續速度
+                _flatZIntegBlockTimer = 0.4f;
             }
             else
             {
@@ -509,12 +517,22 @@ public partial class AccelerometerBallEffect : MonoBehaviour
                 filteredAcceleration   = useTare;
                 calibratedAcceleration = useTare;
             }
-            currentOffset   = Vector3.zero;
+            // X 軸兩模式語義相同（gDevice.x 左右傾斜），繼承以保持視覺連續
+            // Y/Z 語義在兩模式不同（upright Y=gDevice.z, flat Y=gDevice.y；Z flip 方向相反），
+            // 繼承舊值會讓新模式把球往反方向拉，改為讓新模式感測器立即主導（從 0 開始）
+            {
+                Vector3 inh = smoothedPosition - centerLocalPosition;
+                currentOffset = new Vector3(
+                    s.axisScale.x > 0.001f ? Mathf.Clamp(inh.x / s.axisScale.x, -s.maxOffsetPerAxis.x, s.maxOffsetPerAxis.x) : 0f,
+                    0f,
+                    0f
+                );
+            }
             currentVelocity = Vector3.zero;
             prevPhoneIsFlat = phoneIsFlat;
-            // 積分狀態重設；切入平放時以當前 rawZ 初始化卡爾曼，避免首幀大誤差
+            // 積分狀態重設；卡爾曼從 0 開始避免殘留舊模式 Z 值造成切換後立即暴衝
             _flatZVelInt  = 0f;
-            _kalmanZState = phoneIsFlat ? rawAcceleration.z : 0f;
+            _kalmanZState = 0f;
             _kalmanZCov   = 1f;
             _zAnchorOffset    = 0f;
             _zImpulseFiltered = 0f;
@@ -528,9 +546,11 @@ public partial class AccelerometerBallEffect : MonoBehaviour
 
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         Vector3 emaTarget = rawAcceleration;
-        // 嚮導進行中跳過積分：讓嚮導直接量測原始加速度，sensitivity.z 校正才準確
+        if (_flatZIntegBlockTimer > 0f) _flatZIntegBlockTimer -= Time.deltaTime;
+        // 嚮導進行中跳過積分；切換模式後封鎖視窗期間也跳過，等翻轉動作平息後再啟動
         bool runIntegration = phoneIsFlat && flatZUseIntegration &&
-            (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done);
+            (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done) &&
+            _flatZIntegBlockTimer <= 0f;
         if (runIntegration)
         {
             // 卡爾曼預濾波：消除高頻雜訊再積分，避免噪聲累積成系統性漂移
@@ -1018,6 +1038,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         _flatZVelInt  = 0f;
         _kalmanZState = 0f;
         _kalmanZCov   = 1f;
+        _flatZIntegBlockTimer = 0f;
         _zAnchorOffset    = 0f;
         _zImpulseFiltered = 0f;
         _zAnchorCooldown   = 0f;
