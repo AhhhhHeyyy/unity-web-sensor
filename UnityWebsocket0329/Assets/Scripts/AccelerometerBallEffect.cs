@@ -819,12 +819,13 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             currentOffset = Vector3.SmoothDamp(currentOffset, sdTarget, ref currentVelocity, smoothTime);
         }
 
-        // outputFlip 在此套用：所有內部計算（EMA、積分、死區、回彈）均已完成，
-        // 純粹翻轉輸出方向，不影響任何內部狀態或訊號。
+        // axisFlip 在管線中段（死區前）套用；此處再乘一次以抵消其方向效果，
+        // 使 axisFlip 僅影響死區對稱性（供嚮導內部校正用），不決定最終輸出方向。
+        // 輸出方向完全由 outputFlip 控制，與 axisFlip 設定無關。
         Vector3 scaledOffset = new Vector3(
-            currentOffset.x * s.axisScale.x * s.outputFlip.x,
-            currentOffset.y * s.axisScale.y * s.outputFlip.y,
-            currentOffset.z * s.axisScale.z * s.outputFlip.z
+            currentOffset.x * s.axisScale.x * s.axisFlip.x,
+            currentOffset.y * s.axisScale.y * s.axisFlip.y,
+            currentOffset.z * s.axisScale.z * s.axisFlip.z
         );
         // 輸出端死區：位移小於 minOutputStep 歸零，消除靜止微抖
         debugScaledBeforeFilter = scaledOffset;
@@ -839,9 +840,16 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         if (zInputIdle && Mathf.Abs(scaledOffset.z) < s.minOutputStep.z) scaledOffset.z = 0f;
         debugScaledAfterFilter = scaledOffset;
         debugMinOutputStep     = s.minOutputStep;
+        // 先做座標空間轉換，再套用 outputFlip：
+        // outputFlip 作用在 parent local 空間，各軸真正獨立，不受 parent 旋轉影響
         Vector3 localScaledOffset = transform.parent != null
             ? transform.parent.InverseTransformDirection(scaledOffset)
             : scaledOffset;
+        localScaledOffset = new Vector3(
+            localScaledOffset.x * s.outputFlip.x,
+            localScaledOffset.y * s.outputFlip.y,
+            localScaledOffset.z * s.outputFlip.z
+        );
         // 若指定了 centerPoint 物體，每幀動態跟隨其位置，確保球始終以該物體為原點偏移
         if (centerPoint != null)
             centerLocalPosition = transform.parent != null
