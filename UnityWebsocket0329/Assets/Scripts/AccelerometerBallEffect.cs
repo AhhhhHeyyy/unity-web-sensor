@@ -754,17 +754,20 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         );
 
         // Z 軸錨點覆蓋：用持續錨點取代彈回的線性加速度映射
+        // 乘上 axisFlip.z：anchor 基於 raw sensor 方向累積，需對齊 mid-pipeline 空間，
+        // 確保 outputFlip.z 可一致控制方向（不論 axisFlip.z 為 ±1）
         if (zAnchorEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
-            targetOffset.z = _zAnchorOffset;
+            targetOffset.z = _zAnchorOffset * s.axisFlip.z;
 
         // Z 軸姿態輔助：以傾斜分量（持續量，不回彈）疊加在 targetOffset.z 上
         // 直立：gDevice.z（俯仰傾斜）；平放：gDevice.y（前後傾斜，最乾淨無耦合）
         // 校正基準在 Recalibrate() 設定，靜止時貢獻為 0
+        // 同樣乘上 axisFlip.z，與錨點和主訊號保持一致的座標空間
         if (zPitchAssistEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
         {
             float rawTilt  = phoneIsFlat ? _gDevicePitchY : _gDevicePitchZ;
             float tiltTare = phoneIsFlat ? _tiltTareFlat  : _tiltTareUpright;
-            float tiltZ    = (rawTilt - tiltTare) * zPitchAssistScale;
+            float tiltZ    = (rawTilt - tiltTare) * zPitchAssistScale * s.axisFlip.z;
             targetOffset.z = Mathf.Clamp(targetOffset.z + tiltZ,
                                          -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z);
         }
