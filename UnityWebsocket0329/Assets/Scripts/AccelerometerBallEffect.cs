@@ -34,8 +34,14 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         [Tooltip("哪些軸要受加速度影響（1=開，0=關）")]
         public Vector3 movementAxesMask;
 
-        [Tooltip("各軸方向翻轉（1=正常, -1=反轉）。若某軸方向相反，在 Inspector 改 -1 即可")]
+        [Tooltip("各軸方向翻轉（1=正常, -1=反轉）；作用在死區之前的訊號管線中段。\n" +
+                 "※ 若只是要修正輸出方向相反，建議改用下方 outputFlip（純前端，不影響積分與死區）")]
         public Vector3 axisFlip;
+
+        [Tooltip("輸出方向翻轉（純前端，1=正常, -1=反轉）：\n" +
+                 "在 EMA、積分、死區、回彈全部計算完畢後才翻轉輸出，完全不進入任何內部訊號。\n" +
+                 "Y 或 Z 方向感覺反了 → 將對應軸設為 -1，不會造成卡頓或汙染積分邏輯。")]
+        public Vector3 outputFlip;
 
         [Tooltip("各軸死區（m/s²）：低於此值的輸入歸零，消除靜止漂移。超過死區後連續輸出")]
         public Vector3 axisDeadzone;
@@ -89,6 +95,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         inputFilterTime    = 0.05f,
         movementAxesMask   = new Vector3(1, 1, 1),
         axisFlip           = new Vector3(1f, 1f, -1f),
+        outputFlip         = new Vector3(1f, 1f, 1f),
         axisDeadzone       = new Vector3(0.3f, 0.3f, 0.3f),
         axisScale          = new Vector3(1f, 1f, 1f),
         maxOffsetPerAxis   = new Vector3(3f, 3f, 3f),
@@ -155,6 +162,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         inputFilterTime    = 0.06f,
         movementAxesMask   = new Vector3(1, 0, 1),
         axisFlip           = new Vector3(1f, 1f, -1f),
+        outputFlip         = new Vector3(1f, 1f, 1f),
         axisDeadzone       = new Vector3(0.2f, 0.2f, 0.2f),
         axisScale          = new Vector3(1f, 1f, 1f),
         maxOffsetPerAxis   = new Vector3(3f, 3f, 3f),
@@ -811,10 +819,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             currentOffset = Vector3.SmoothDamp(currentOffset, sdTarget, ref currentVelocity, smoothTime);
         }
 
+        // outputFlip 在此套用：所有內部計算（EMA、積分、死區、回彈）均已完成，
+        // 純粹翻轉輸出方向，不影響任何內部狀態或訊號。
         Vector3 scaledOffset = new Vector3(
-            currentOffset.x * s.axisScale.x,
-            currentOffset.y * s.axisScale.y,
-            currentOffset.z * s.axisScale.z
+            currentOffset.x * s.axisScale.x * s.outputFlip.x,
+            currentOffset.y * s.axisScale.y * s.outputFlip.y,
+            currentOffset.z * s.axisScale.z * s.outputFlip.z
         );
         // 輸出端死區：位移小於 minOutputStep 歸零，消除靜止微抖
         debugScaledBeforeFilter = scaledOffset;
