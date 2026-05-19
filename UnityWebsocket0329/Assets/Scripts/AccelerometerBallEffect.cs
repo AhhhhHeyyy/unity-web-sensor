@@ -302,6 +302,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     private float _kalmanZState = 0f;
     private float _kalmanZCov   = 1f;
     private float _flatZIntegBlockTimer = 0f; // 切入平放後暫時封鎖積分，防止翻轉加速度積分成持續速度
+    private float _flatGDeviceYSmooth   = 0f; // gDevice.y 慢速 EMA（0.25s），用於偵測傾斜速率
 
     private float _zAnchorOffset    = 0f; // Z 軸持續錨點（Unity 米）
     private float _zImpulseFiltered = 0f; // 衝量偵測快速 EMA
@@ -430,8 +431,9 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         if (hasOrientationData && !phoneIsFlat)
         {
             // 直立模式：X/Y 已由 HandleGyroscopeData 的 gDevice 負責；此處只更新 Z（前後推力）
+            // 與平放 Z 相同做法：限幅防止快速翻轉時離心加速度（可達 15~25 m/s²）暴衝
             Vector3 worldAcc = currentOrientation * acc;
-            rawAcceleration.z = worldAcc.y; // Android 世界 Y → Unity Z
+            rawAcceleration.z = Mathf.Clamp(worldAcc.y, -flatLinZClamp, flatLinZClamp);
         }
         else if (hasOrientationData && phoneIsFlat)
         {
@@ -542,9 +544,10 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             currentVelocity = Vector3.zero;
             prevPhoneIsFlat = phoneIsFlat;
             // 積分狀態重設；卡爾曼從 0 開始避免殘留舊模式 Z 值造成切換後立即暴衝
-            _flatZVelInt  = 0f;
-            _kalmanZState = 0f;
-            _kalmanZCov   = 1f;
+            _flatZVelInt        = 0f;
+            _kalmanZState       = 0f;
+            _kalmanZCov         = 1f;
+            _flatGDeviceYSmooth = rawAcceleration.y; // 重設為當前 gDevice.y，避免切換瞬間產生假傾斜速率
             _zAnchorOffset    = 0f;
             _zImpulseFiltered = 0f;
             _zAnchorCooldown   = 0f;
@@ -558,10 +561,26 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         Vector3 emaTarget = rawAcceleration;
         if (_flatZIntegBlockTimer > 0f) _flatZIntegBlockTimer -= Time.deltaTime;
-        // 嚮導進行中跳過積分；切換模式後封鎖視窗期間也跳過，等翻轉動作平息後再啟動
+
+        // 傾斜速率偵測（平放專用）：gDevice.y 快速變化 = 正在傾斜手機。
+        // 傾斜同時也產生 worldAcc.y 假訊號，若與 zPitchAssist 同時驅動 Z 會雙重暴衝；
+        // 偵測到傾斜中時暫停積分，讓 pitchAssist 單獨負責 Z 的傾斜響應。
+        if (phoneIsFlat)
+        {
+            float gyAlpha = 1f - Mathf.Exp(-Time.deltaTime / 0.25f);
+            _flatGDeviceYSmooth = Mathf.Lerp(_flatGDeviceYSmooth, rawAcceleration.y, gyAlpha);
+        }
+        float _tiltRate = phoneIsFlat ? Mathf.Abs(rawAcceleration.y - _flatGDeviceYSmooth) : 0f;
+        // 閾值 0.4 m/s²：平舉推動（純線性加速）幾乎不改變 gDevice.y，
+        // 傾斜動作則會讓 gDevice.y 與慢速 EMA 出現明顯偏差。
+        bool _tiltInProgress = zPitchAssistEnabled && phoneIsFlat && _tiltRate > 0.4f;
+
+        // 嚮導進行中跳過積分；切換模式後封鎖視窗期間也跳過，等翻轉動作平息後再啟動；
+        // 傾斜中（pitchAssist 已接手）也跳過，避免 worldAcc.y 假訊號被雙重積分。
         bool runIntegration = phoneIsFlat && flatZUseIntegration &&
             (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done) &&
-            _flatZIntegBlockTimer <= 0f;
+            _flatZIntegBlockTimer <= 0f &&
+            !_tiltInProgress;
         if (runIntegration)
         {
             // 卡爾曼預濾波：消除高頻雜訊再積分，避免噪聲累積成系統性漂移
@@ -577,9 +596,18 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             float _integInput = Mathf.Abs(_kalmanZState) > _integDz
                 ? Mathf.Sign(_kalmanZState) * (Mathf.Abs(_kalmanZState) - _integDz)
                 : 0f;
+            // 零穿保護：反向輸入只能讓速度趨向 0，不能強制翻轉方向。
+            // 停止推力時加速度計的反向慣性脈衝不應把球推到反方向；
+            // 真正的反向推力需等摩擦把速度衰減到 0 後才生效。
+            if (_flatZVelInt != 0f && _integInput != 0f &&
+                Mathf.Sign(_integInput) != Mathf.Sign(_flatZVelInt))
+                _integInput = 0f;
             _flatZVelInt += _integInput * flatZForceGain * Time.deltaTime;
             _flatZVelInt *= Mathf.Exp(-flatZFriction * Time.deltaTime);
-            emaTarget.z   = Mathf.Clamp(_flatZVelInt * flatZOutputScale, -flatLinZClamp, flatLinZClamp);
+            // Anti-windup：輸出到達邊界時夾住速度，防止繼續累積後反轉大幅彈跳
+            float _velLimit = flatLinZClamp / Mathf.Max(flatZOutputScale, 0.01f);
+            _flatZVelInt = Mathf.Clamp(_flatZVelInt, -_velLimit, _velLimit);
+            emaTarget.z  = _flatZVelInt * flatZOutputScale;
         }
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, emaTarget, alpha);
 
@@ -667,12 +695,18 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             // 舊實作以 halfDz*2 為門檻，導致訊號明顯超過死區時補償仍有 40~75% 活躍，
             // 使 tare 緩慢追蹤傾斜位置，令球被「吸回中心」
             float normX = Mathf.Abs(debiased.x) / Mathf.Max(s.axisDeadzone.x, 0.01f);
-            float normZ = Mathf.Abs(debiased.z) / Mathf.Max(s.axisDeadzone.z, 0.01f);
+            // 積分模式下 filteredAcceleration.z 是速度輸出，debiased.z 被補償扯向 0，
+            // 無法反映真實推力；改用原始訊號判斷是否靜止，避免補償誤判為 idle 而干擾積分。
+            float normZ = flatZUseIntegration
+                ? Mathf.Abs(rawAcceleration.z) / Mathf.Max(s.axisDeadzone.z, 0.01f)
+                : Mathf.Abs(debiased.z)        / Mathf.Max(s.axisDeadzone.z, 0.01f);
             float idleRatio = 1f - Mathf.Clamp01(Mathf.Max(normX, normZ));
             _dbIdleRatio = idleRatio;
             float corrAlpha = (1f - Mathf.Exp(-Time.deltaTime / flatGravityCorrectionTime)) * idleRatio;
             calibratedAcceleration.x += (filteredAcceleration.x - calibratedAcceleration.x) * corrAlpha;
-            calibratedAcceleration.z += (filteredAcceleration.z - calibratedAcceleration.z) * corrAlpha;
+            // 積分模式下 Z 的參考點由積分自行管理（calibratedAcceleration.z 已鎖 0），不做重力補償
+            if (!flatZUseIntegration)
+                calibratedAcceleration.z += (filteredAcceleration.z - calibratedAcceleration.z) * corrAlpha;
             // 重新計算去偏（本幀立即生效）
             debiased = filteredAcceleration - calibratedAcceleration;
         }
@@ -786,7 +820,13 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         debugScaledBeforeFilter = scaledOffset;
         if (Mathf.Abs(scaledOffset.x) < s.minOutputStep.x) scaledOffset.x = 0f;
         if (Mathf.Abs(scaledOffset.y) < s.minOutputStep.y) scaledOffset.y = 0f;
-        if (Mathf.Abs(scaledOffset.z) < s.minOutputStep.z) scaledOffset.z = 0f;
+        // Z：主動施力時跳過 minOutputStep，讓 EMA/SmoothDamp 從 0 連續建立不被截斷（防止卡頓感）；
+        // 只在 idle（訊號在死區內）時才過濾微抖。
+        bool zInputIdle = Mathf.Abs(deadzoned.z) <= 0.001f &&
+            !(zAnchorEnabled) &&
+            !(zPitchAssistEnabled && Mathf.Abs(targetOffset.z) > 0.001f) &&
+            !(flatZUseIntegration && runIntegration);
+        if (zInputIdle && Mathf.Abs(scaledOffset.z) < s.minOutputStep.z) scaledOffset.z = 0f;
         debugScaledAfterFilter = scaledOffset;
         debugMinOutputStep     = s.minOutputStep;
         Vector3 localScaledOffset = transform.parent != null
@@ -805,9 +845,10 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         {
             // offset = 舊位置 - 新模式預測位置；之後隨時間淡出至 0
             modeSwitchTransitionOffset = smoothedPosition - proposedPosition;
-            // 平放模式 Y 軸遮罩為 0（targetOffset.y 永遠為 0），Y 過渡補償只會讓球緩慢
-            // 「彈回 0」，視覺上像在原點彈回，直接清零讓 Y 立即歸位。
-            if (phoneIsFlat) modeSwitchTransitionOffset.y = 0f;
+            // 平放模式 Y 軸遮罩為 0（targetOffset.y = 0），但若直立時 Y 已偏移很大，
+            // 直接清零會造成瞬間彈回；改為只在跳動量小（< 0.5m）時才跳過 blend。
+            if (phoneIsFlat && Mathf.Abs(modeSwitchTransitionOffset.y) < 0.5f)
+                modeSwitchTransitionOffset.y = 0f;
 
             float jumpMag = modeSwitchTransitionOffset.magnitude;
             // 起始補償量已計算，保留並隨時間混合淡出（不清零）。

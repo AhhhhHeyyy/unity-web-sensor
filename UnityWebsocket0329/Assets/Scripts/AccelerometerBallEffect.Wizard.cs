@@ -414,7 +414,7 @@ public partial class AccelerometerBallEffect
                 {
                     float noiseFloor = noiseThr / 3f;
                     float refinedDz  = Mathf.Clamp(wizardMinPeakMagnitude * 0.3f, noiseFloor, wizardMinPeakMagnitude * 0.5f);
-                    refinedDz = Mathf.Min(refinedDz, 0.7f); // 上限 0.7m/s²，避免死區過大導致 Z 軸移動不明顯
+                    refinedDz = Mathf.Min(refinedDz, 0.5f); // 上限 0.5m/s²，避免死區過大導致 Z 軸移動不明顯
                     if (isUpright) pendingUprightDeadzone.z = refinedDz;
                     else           pendingFlatDeadzone.z    = refinedDz;
                     noiseThr = refinedDz; // 後續計算使用精修後的死區
