@@ -70,6 +70,9 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     [Header("平放/直立切換")]
     [Tooltip("flatness 閾值（0~1），超過此值視為平放；建議 0.6~0.8")]
     [SerializeField] [Range(0f, 1f)] private float flatnessThreshold = 0.7f;
+    [Tooltip("遲滯帶寬（0~0.4）：退出平放所需 flatnessRatio = flatnessThreshold − flatnessHysteresis。\n" +
+             "讓進入/離開平放使用不同門檻，防止斜拿時反覆切換。建議 0.1~0.2")]
+    [SerializeField] [Range(0f, 0.4f)] private float flatnessHysteresis = 0.15f;
     [Tooltip("（唯讀）目前是否判定為平放模式")]
     [SerializeField] private bool phoneIsFlat = false;
     [Tooltip("模式防抖時間（秒）：新狀態需穩定超過此值才真正切換，防止快速揮動造成頻繁切換；建議 0.2~0.4")]
@@ -226,6 +229,8 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     [Header("輸出平滑（抗抖動）")]
     [Tooltip("位置輸出的低通濾波時間常數（秒）。越大越平滑但反應越慢；0 = 關閉。建議 0.03 ~ 0.08")]
     [SerializeField] [Range(0f, 0.3f)] private float positionFilterTime = 0.05f;
+    [Tooltip("模式切換後的阻尼過渡時間（秒）。SmoothDamp 以此為起始 smoothTime，再線性收斂回 positionFilterTime；越大越絲滑，建議 0.2 ~ 0.4")]
+    [SerializeField] [Range(0.05f, 1f)] private float modeSwitchSmoothTime = 0.3f;
 
     [Header("軸示意線（Scene / Game 視窗）")]
     [Tooltip("是否顯示 XYZ 軸示意線（紅=X，綠=Y，藍=Z）")]
@@ -261,7 +266,9 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     private Vector3    prevFramePosition            = Vector3.zero;
     private float      switchTimer               = -1f;
     private bool       switchLoggedComplete      = false;
-    private float      _effectiveTransitionDuration = 0.5f; // 自適應：實際使用的過渡時長（≤ modeSwitchTransitionDuration）
+    private float      _effectiveTransitionDuration = 0.5f; // 保留供 debug log 使用
+    private Vector3    _posVelocity          = Vector3.zero; // SmoothDamp 輸出速度（物理阻尼）
+    private float      _switchSmoothRemaining = 0f;          // 模式切換阻尼剩餘時間（秒）
     private float      firstDataTime             = -1f; // 第一筆感測器資料到達的時間戳
     private Vector3    smoothedPosition          = Vector3.zero; // 輸出位置 EMA（抗抖動）
     private float      calibrationMsgTimer       = 0f;
@@ -466,14 +473,18 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             return;
         }
 
-        // ── 模式防抖：rawPhoneIsFlat 穩定超過 modeSwitchDebounceTime 才更新 phoneIsFlat ──
-        // 快速揮動時 rawPhoneIsFlat 頻繁翻轉，計時器被不斷重置，phoneIsFlat 不會切換
-        if (rawPhoneIsFlat != phoneIsFlat)
+        // ── 模式防抖（含遲滯）：進入平放用 flatnessThreshold，退出平放用較低的 flatnessThreshold − flatnessHysteresis ──
+        // 手機斜拿時 flatnessRatio 在閾值附近震盪，遲滯帶讓兩方向使用不同門檻，消除反覆切換。
+        float exitThresh   = Mathf.Max(0f, flatnessThreshold - flatnessHysteresis);
+        bool  targetFlat   = phoneIsFlat
+            ? debugFlatnessRatio >= exitThresh   // 已在平放：需降到更低才離開
+            : rawPhoneIsFlat;                    // 非平放：用正常閾值決定進入
+        if (targetFlat != phoneIsFlat)
         {
             flatnessHoldTimer += Time.deltaTime;
             if (flatnessHoldTimer >= modeSwitchDebounceTime)
             {
-                phoneIsFlat       = rawPhoneIsFlat;
+                phoneIsFlat       = targetFlat;
                 flatnessHoldTimer = 0f;
             }
         }
@@ -799,23 +810,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             if (phoneIsFlat) modeSwitchTransitionOffset.y = 0f;
 
             float jumpMag = modeSwitchTransitionOffset.magnitude;
-            // 自適應過渡時間：固定最大視覺移動速度（kMaxSwitchSpeed m/s）。
-            // 跳動 < modeSwitchTransitionDuration × kMaxSwitchSpeed → 按比例縮短時長（保持視覺速度恆定）。
-            // 跳動 ≥ 閾值（快速甩手） → 瞬間跳到新位置（teleport），完全避免長距離拖影。
-            const float kMaxSwitchSpeed = 6f; // m/s；調高 = 更傾向瞬間切換
-            float minDuration = jumpMag / kMaxSwitchSpeed;
-            if (minDuration >= modeSwitchTransitionDuration)
-            {
-                // 跳動太大：直接 teleport，不做視覺過渡
-                modeSwitchTransitionOffset   = Vector3.zero;
-                modeSwitchTransitionProgress = 1f;
-                _effectiveTransitionDuration = 0f;
-            }
-            else
-            {
-                modeSwitchTransitionProgress = 0f;
-                _effectiveTransitionDuration = Mathf.Max(minDuration, 0.05f);
-            }
+            // 起始補償量已計算，保留並隨時間混合淡出（不清零）。
+            // blendedTarget = proposedPosition + offset × (1 − SmoothStep(progress))
+            // → 切換瞬間 blendedTarget = smoothedPosition（無跳動），0.5s 後完全收斂到新模式。
+            modeSwitchTransitionProgress = 0f;
+            _effectiveTransitionDuration = modeSwitchTransitionDuration;
+            _posVelocity = Vector3.zero;
 
             string dir = phoneIsFlat ? "直立 → 平放" : "平放 → 直立";
             debugLastSwitchDir   = dir;
@@ -826,34 +826,22 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             Debug.Log($"[模式切換] {dir}\n" +
                       $"  切換前位置 : {smoothedPosition:F3}\n" +
                       $"  新模式預測 : {proposedPosition:F3}\n" +
-                      $"  跳動距離={jumpMag:F2}m  " +
-                      $"{(_effectiveTransitionDuration <= 0f ? "→ 瞬間切換（距離超過閾值）" : $"→ 過渡時長={_effectiveTransitionDuration:F2}s")}");
+                      $"  跳動距離={jumpMag:F2}m  → 位置混合過渡 {modeSwitchTransitionDuration:F2}s");
         }
 
-        // 補償淡出：SmoothStep 在 transitionDuration 秒內把跳動 offset 降到 0
-        // proposedPosition 本身完全不受影響，傾斜反應依然即時
-        Vector3 basePosition;
+        // 輸出位置：混合過渡 + SmoothDamp 抗抖動
+        // 原理：modeSwitchTransitionProgress 從 0 爬升到 1（持續 modeSwitchTransitionDuration 秒）。
+        //   blendedTarget = proposedPosition + transitionOffset × (1 − SmoothStep(progress))
+        //   → 起點與 smoothedPosition 重合（零跳動），終點完全收斂到新模式位置。
+        //   每幀最大位移 ≈ jumpMag / duration / fps，完全受 duration 參數控制，不依賴 SmoothDamp 初速。
         if (modeSwitchTransitionProgress < 1f)
-        {
             modeSwitchTransitionProgress = Mathf.Clamp01(
-                modeSwitchTransitionProgress + Time.deltaTime / _effectiveTransitionDuration);
-            float fade   = 1f - Mathf.SmoothStep(0f, 1f, modeSwitchTransitionProgress);
-            basePosition = proposedPosition + modeSwitchTransitionOffset * fade;
-        }
-        else
+                modeSwitchTransitionProgress + Time.deltaTime / Mathf.Max(modeSwitchTransitionDuration, 0.01f));
         {
-            basePosition = proposedPosition;
-        }
-
-        // 輸出位置 EMA：在 basePosition 之後再做一次低通濾波，消除高頻抖動
-        if (positionFilterTime > 0f)
-        {
-            float posAlpha   = 1f - Mathf.Exp(-Time.deltaTime / positionFilterTime);
-            smoothedPosition = Vector3.Lerp(smoothedPosition, basePosition, posAlpha);
-        }
-        else
-        {
-            smoothedPosition = basePosition;
+            float blendFade      = 1f - Mathf.SmoothStep(0f, 1f, modeSwitchTransitionProgress);
+            Vector3 blendedTarget = proposedPosition + modeSwitchTransitionOffset * blendFade;
+            float outT            = Mathf.Max(positionFilterTime, 0.01f);
+            smoothedPosition = Vector3.SmoothDamp(smoothedPosition, blendedTarget, ref _posVelocity, outT);
         }
         transform.localPosition = smoothedPosition;
 
@@ -1039,6 +1027,8 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         _kalmanZState = 0f;
         _kalmanZCov   = 1f;
         _flatZIntegBlockTimer = 0f;
+        _switchSmoothRemaining = 0f;
+        _posVelocity = Vector3.zero;
         _zAnchorOffset    = 0f;
         _zImpulseFiltered = 0f;
         _zAnchorCooldown   = 0f;
