@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>感測器傳輸</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0f0f0f; color: #fff;
+    min-height: 100dvh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  #screen-permission, #screen-connecting, #screen-live { width: 100%; max-width: 360px; text-align: center; }
+  .hidden { display: none !important; }
+  h2 { font-size: 1.4rem; margin-bottom: 8px; }
+  p  { font-size: 0.9rem; color: #aaa; line-height: 1.5; }
+  .btn {
+    margin-top: 28px; padding: 16px 0; width: 100%; border-radius: 14px; border: none;
+    font-size: 1.1rem; font-weight: 600; cursor: pointer;
+    background: #2563eb; color: #fff;
+  }
+  .btn:active { opacity: 0.8; }
+  .status-dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    margin-right: 6px; background: #facc15;
+  }
+  .status-dot.green { background: #22c55e; }
+  .status-dot.red   { background: #ef4444; }
+  #status-bar {
+    margin-top: 24px; padding: 12px 16px; border-radius: 10px;
+    background: #1f1f1f; font-size: 0.85rem; text-align: left;
+  }
+  #status-bar div { margin: 4px 0; }
+  .cube-wrap {
+    perspective: 300px; width: 90px; height: 90px; margin: 28px auto;
+  }
+  .cube {
+    width: 90px; height: 90px; position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.05s linear;
+  }
+  .face {
+    position: absolute; width: 90px; height: 90px;
+    border: 2px solid rgba(255,255,255,0.25);
+    font-size: 0.7rem; display: flex; align-items: center; justify-content: center;
+  }
+  .front  { background: rgba(37,99,235,0.5);  transform: translateZ(45px); }
+  .back   { background: rgba(37,99,235,0.3);  transform: rotateY(180deg) translateZ(45px); }
+  .right  { background: rgba(99,102,241,0.4); transform: rotateY(90deg)  translateZ(45px); }
+  .left   { background: rgba(99,102,241,0.3); transform: rotateY(-90deg) translateZ(45px); }
+  .top    { background: rgba(139,92,246,0.4); transform: rotateX(90deg)  translateZ(45px); }
+  .bottom { background: rgba(139,92,246,0.3); transform: rotateX(-90deg) translateZ(45px); }
+  #disconnect-btn {
+    margin-top: 20px; padding: 12px 0; width: 100%; border-radius: 10px; border: 1px solid #555;
+    background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<!-- 畫面1：請求感測器權限 -->
+<div id="screen-permission">
+  <h2>準備連線到 Unity</h2>
+  <p>點下方按鈕授予感測器權限，即可開始傳送資料。</p>
+  <button class="btn" id="btn-start">開始傳送感測器</button>
+  <p id="perm-err" style="color:#ef4444;margin-top:12px;"></p>
+</div>
+
+<!-- 畫面2：連線中 -->
+<div id="screen-connecting" class="hidden">
+  <h2>連線中…</h2>
+  <p id="conn-msg">正在連接 Signaling Server</p>
+</div>
+
+<!-- 畫面3：傳輸中 -->
+<div id="screen-live" class="hidden">
+  <h2><span class="status-dot green"></span>傳輸中</h2>
+  <div class="cube-wrap"><div class="cube" id="cube">
+    <div class="face front">前</div>
+    <div class="face back">後</div>
+    <div class="face right">右</div>
+    <div class="face left">左</div>
+    <div class="face top">上</div>
+    <div class="face bottom">下</div>
+  </div></div>
+  <div id="status-bar">
+    <div id="sb-mode">模式：-</div>
+    <div id="sb-hz">頻率：-</div>
+    <div id="sb-pkts">封包：0</div>
+  </div>
+  <button id="disconnect-btn">中斷連線</button>
+</div>
+
+<script>
+const SIGNAL_URL = (() => {
+  const p = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${p}//${window.location.host}`;
+})();
+
+const params   = new URLSearchParams(window.location.search);
+const ROOM     = params.get('room') || 'DEFAULT';
+
+let ws = null, pc = null, dc = null;
+let orientData = { alpha: 0, beta: 0, gamma: 0 };
+let accelData  = { x: 0, y: 0, z: 0 };
+let pktCount   = 0, hzCount = 0, lastHzTime = Date.now();
+
+// ── 畫面切換 ──────────────────────────────────────────────
+function show(id) {
+  ['screen-permission','screen-connecting','screen-live'].forEach(s =>
+    document.getElementById(s).classList.toggle('hidden', s !== id));
+}
+
+// ── iOS 權限按鈕 ──────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', async () => {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const r1 = await DeviceOrientationEvent.requestPermission();
+      const r2 = await DeviceMotionEvent.requestPermission();
+      if (r1 !== 'granted' || r2 !== 'granted') {
+        document.getElementById('perm-err').textContent = '請允許感測器權限';
+        return;
+      }
+    } catch(e) {
+      document.getElementById('perm-err').textContent = '權限請求失敗：' + e.message;
+      return;
+    }
+  }
+  startSensors();
+  show('screen-connecting');
+  connectSignaling();
+});
+
+// ── 感測器監聽 ────────────────────────────────────────────
+function startSensors() {
+  window.addEventListener('deviceorientation', e => {
+    orientData = { alpha: e.alpha || 0, beta: e.beta || 0, gamma: e.gamma || 0 };
+    if (dc && dc.readyState === 'open') sendPacket();
+  });
+  window.addEventListener('devicemotion', e => {
+    const a = e.accelerationIncludingGravity;
+    if (a) accelData = { x: a.x || 0, y: a.y || 0, z: a.z || 0 };
+  });
+}
+
+// ── Euler(ZXY) → Quaternion ──────────────────────────────
+function eulerToQuat(alpha, beta, gamma) {
+  const a = alpha * Math.PI / 180;
+  const b = beta  * Math.PI / 180;
+  const g = gamma * Math.PI / 180;
+  const ca = Math.cos(a/2), sa = Math.sin(a/2);
+  const cb = Math.cos(b/2), sb = Math.sin(b/2);
+  const cg = Math.cos(g/2), sg = Math.sin(g/2);
+  return {
+    w: ca*cb*cg - sa*sb*sg,
+    x: ca*sb*cg - sa*cb*sg,
+    y: ca*cb*sg + sa*sb*cg,
+    z: sa*cb*cg + ca*sb*sg
+  };
+}
+
+// ── 封包打包（28 bytes Big-Endian）──────────────────────
+function sendPacket() {
+  const q = eulerToQuat(orientData.alpha, orientData.beta, orientData.gamma);
+  const buf  = new ArrayBuffer(28);
+  const view = new DataView(buf);
+  view.setFloat32(0,  q.x,        false);
+  view.setFloat32(4,  q.y,        false);
+  view.setFloat32(8,  q.z,        false);
+  view.setFloat32(12, q.w,        false);
+  view.setFloat32(16, accelData.x, false);
+  view.setFloat32(20, accelData.y, false);
+  view.setFloat32(24, accelData.z, false);
+  dc.send(buf);
+  pktCount++; hzCount++;
+
+  // 方塊姿態預覽
+  const c = document.getElementById('cube');
+  if (c) c.style.transform =
+    `rotateZ(${-orientData.alpha}deg) rotateX(${orientData.beta}deg) rotateY(${orientData.gamma}deg)`;
+}
+
+// ── Hz 計算 ───────────────────────────────────────────────
+setInterval(() => {
+  const now = Date.now();
+  const hz  = Math.round(hzCount * 1000 / (now - lastHzTime));
+  document.getElementById('sb-hz').textContent  = `頻率：${hz} Hz`;
+  document.getElementById('sb-pkts').textContent = `封包：${pktCount}`;
+  hzCount = 0; lastHzTime = now;
+}, 1000);
+
+// ── Signaling WebSocket ───────────────────────────────────
+function connectSignaling() {
+  setConn('正在連接 Signaling Server…');
+  ws = new WebSocket(SIGNAL_URL);
+
+  ws.onopen = () => {
+    setConn('已連上 Server，等待 Unity…');
+    ws.send(JSON.stringify({ type: 'join', room: ROOM, role: 'guest' }));
+  };
+
+  ws.onmessage = async e => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'ready') {
+      setConn('Unity 已就緒，建立 WebRTC…');
+      // 等 Unity 送 offer
+    }
+    else if (msg.type === 'offer') {
+      setConn('收到 Offer，協商中…');
+      await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', room: ROOM, sdp: answer.sdp }));
+    }
+    else if (msg.type === 'candidate' && msg.candidate) {
+      try { await pc.addIceCandidate(msg.candidate); } catch(_) {}
+    }
+  };
+
+  ws.onerror = () => setConn('Server 連線錯誤，請重新整理');
+  ws.onclose = () => { if (dc?.readyState !== 'open') setConn('Server 已斷線'); };
+
+  setupPeerConnection();
+}
+
+// ── WebRTC PeerConnection ─────────────────────────────────
+function setupPeerConnection() {
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  });
+
+  pc.onicecandidate = e => {
+    if (e.candidate) {
+      ws.send(JSON.stringify({ type: 'candidate', room: ROOM, candidate: e.candidate }));
+    }
+  };
+
+  pc.ondatachannel = e => {
+    dc = e.channel;
+    dc.onopen  = () => {
+      document.getElementById('sb-mode').textContent = '模式：WebRTC P2P';
+      show('screen-live');
+      tryWakeLock();
+    };
+    dc.onclose = () => show('screen-permission');
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed') setConn('WebRTC 連線失敗，請重新整理');
+  };
+}
+
+// ── Wake Lock（保持螢幕亮）────────────────────────────────
+async function tryWakeLock() {
+  try {
+    if ('wakeLock' in navigator) await navigator.wakeLock.request('screen');
+  } catch(_) {}
+}
+
+// ── 中斷連線 ──────────────────────────────────────────────
+document.getElementById('disconnect-btn').addEventListener('click', () => {
+  dc?.close(); pc?.close(); ws?.close();
+  dc = pc = ws = null;
+  show('screen-permission');
+});
+
+// 輔助
+function setConn(msg) { document.getElementById('conn-msg').textContent = msg; }
+</script>
+</body>
+</html>
