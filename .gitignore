@@ -16,10 +16,8 @@ Builds/
 [Bb]uilds/
 Assets/AssetStoreTools*
 
-# Unity Package Manager
+# Unity Package Manager（只排除鎖定檔，manifest.json 必須保留）
 [Uu]nit[yY]PackageManager/
-Packages/
-manifest.json
 packages-lock.json
 
 # Visual Studio 專案檔案
@@ -73,3 +71,20 @@ AndroidUdpSensor/build/
 
 # VS Code
 .vscode/
+
+# Unity Build 輸出（編譯後的執行檔與資料夾）
+*_Data/
+*_BurstDebugInformation_DoNotShip/
+MonoBleedingEdge/
+D3D12/
+*.exe
+*.lscache
+
+# Unity 執行環境（根目錄的 Build 殘留）
+UnityPlayer.dll
+
+# 其他子專案（不納入此 repo）
+TDTest/
+UnityOSC20251102/
+SpinTest/
+AndroidUdpSensor/

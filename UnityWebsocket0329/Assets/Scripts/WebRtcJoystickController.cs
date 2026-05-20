@@ -14,6 +14,13 @@ public class WebRtcJoystickController : MonoBehaviour
     [Tooltip("勾選後以物件自身朝向決定前後左右；取消則以世界座標 XZ 平面移動")]
     public bool useLocalSpace = false;
 
+    [Header("軸向反轉")]
+    [Tooltip("勾選後水平軸（左右）反向")]
+    public bool invertHorizontal = false;
+
+    [Tooltip("勾選後垂直軸（前後）反向")]
+    public bool invertVertical = false;
+
     private float _h, _v;
 
     void OnEnable()  => SensorEvents.OnJoystickReceived += HandleJoystick;
@@ -29,8 +36,9 @@ public class WebRtcJoystickController : MonoBehaviour
     {
         if (_h == 0f && _v == 0f) return;
 
-        var dir = new Vector3(_h, 0f, _v);
+        float h = _h * (invertHorizontal ? -1f : 1f);
+        float v = _v * (invertVertical   ? -1f : 1f);
         var space = useLocalSpace ? Space.Self : Space.World;
-        transform.Translate(dir * speed * Time.deltaTime, space);
+        transform.Translate(new Vector3(h, 0f, v) * speed * Time.deltaTime, space);
     }
 }
