@@ -58,29 +58,42 @@
     background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
   }
   #joystick-section { margin-top: 28px; }
-  #joystick-section h3 { font-size: 0.85rem; color: #666; margin-bottom: 14px; letter-spacing: 0.05em; }
-  #joystick-pad {
-    display: grid;
-    grid-template-areas: ". up ." "left . right" ". down .";
-    grid-template-columns: repeat(3, 68px);
-    grid-template-rows: repeat(3, 68px);
-    gap: 6px; margin: 0 auto; width: fit-content;
+  #joystick-section h3 { font-size: 0.85rem; color: #555; margin-bottom: 16px; letter-spacing: 0.05em; }
+  #joy-base {
+    position: relative; width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, #0e3a4e 0%, #082030 65%, #041420 100%);
+    margin: 0 auto; touch-action: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; cursor: pointer;
   }
-  .joy-btn {
-    width: 68px; height: 68px; border-radius: 14px;
-    border: 1px solid #333; background: #1a1a2e; color: #fff;
-    font-size: 1.6rem; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation; user-select: none;
-    transition: background 0.08s, border-color 0.08s;
+  #joy-svg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    overflow: visible; pointer-events: none;
   }
-  .joy-btn.pressed { background: #2563eb; border-color: #3b82f6; }
-  #joy-up    { grid-area: up; }
-  #joy-left  { grid-area: left; }
-  #joy-right { grid-area: right; }
-  #joy-down  { grid-area: down; }
-  #joy-hint  { font-size: 0.72rem; color: #444; margin-top: 10px; }
+  .joy-arrow { position: absolute; width: 0; height: 0; opacity: 0.65; }
+  .joy-arrow-up    { top: 13px;    left: 50%; transform: translateX(-50%);
+    border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 13px solid #a8dde8; }
+  .joy-arrow-down  { bottom: 13px; left: 50%; transform: translateX(-50%);
+    border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 13px solid #a8dde8; }
+  .joy-arrow-left  { left: 13px;   top: 50%;  transform: translateY(-50%);
+    border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 13px solid #a8dde8; }
+  .joy-arrow-right { right: 13px;  top: 50%;  transform: translateY(-50%);
+    border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 13px solid #a8dde8; }
+  #joy-knob {
+    position: absolute; top: 50%; left: 50%;
+    width: 82px; height: 82px; margin: -41px 0 0 -41px; border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #1e6080, #0c2e42 75%, #07202e);
+    border: 2px solid rgba(77,217,240,0.55);
+    box-shadow: 0 0 16px rgba(77,217,240,0.18);
+    will-change: transform;
+  }
+  #joy-knob::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px; height: 50px; border-radius: 50%;
+    border: 1px solid rgba(77,217,240,0.3);
+  }
+  #joy-knob.snap { transition: transform 0.14s ease-out; }
+  #joy-hint { font-size: 0.72rem; color: #444; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -119,13 +132,21 @@
 
   <div id="joystick-section">
     <h3>模擬搖桿</h3>
-    <div id="joystick-pad">
-      <button class="joy-btn" id="joy-up">↑</button>
-      <button class="joy-btn" id="joy-left">←</button>
-      <button class="joy-btn" id="joy-right">→</button>
-      <button class="joy-btn" id="joy-down">↓</button>
+    <div id="joy-base">
+      <svg id="joy-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+        <!-- 外圈分段裝飾弧 -->
+        <circle cx="110" cy="110" r="105" fill="none" stroke="#4dd9f0" stroke-width="3.5"
+                stroke-dasharray="118 47" stroke-dashoffset="-22" stroke-linecap="round"/>
+        <!-- 內圈 -->
+        <circle cx="110" cy="110" r="72" fill="none" stroke="rgba(77,217,240,0.18)" stroke-width="1"/>
+      </svg>
+      <div class="joy-arrow joy-arrow-up"></div>
+      <div class="joy-arrow joy-arrow-down"></div>
+      <div class="joy-arrow joy-arrow-left"></div>
+      <div class="joy-arrow joy-arrow-right"></div>
+      <div id="joy-knob"></div>
     </div>
-    <p id="joy-hint">↑前進　↓後退　←左移　→右移　(支援鍵盤 WASD / ↑↓←→)</p>
+    <p id="joy-hint">拖曳搖桿移動　鍵盤 WASD / 方向鍵</p>
   </div>
 </div>
 
@@ -221,21 +242,56 @@ function sendPacket() {
 
 // ── 模擬搖桿 ──────────────────────────────────────────────
 let joyH = 0, joyV = 0;
-const joyPressed = new Set();
+let joyDragging  = false;
 let joyInterval  = null;
+const JOY_MAX    = 62; // knob 最大位移 px（(220/2) - (82/2) - 8）
 
-function updateJoyState() {
-  joyH = (joyPressed.has('right') ? 1 : 0) - (joyPressed.has('left') ? 1 : 0);
-  joyV = (joyPressed.has('up')    ? 1 : 0) - (joyPressed.has('down') ? 1 : 0);
+const joyBase = document.getElementById('joy-base');
+const joyKnob = document.getElementById('joy-knob');
+
+function joyMove(clientX, clientY) {
+  const r  = joyBase.getBoundingClientRect();
+  let dx   = clientX - (r.left + r.width  / 2);
+  let dy   = clientY - (r.top  + r.height / 2);
+  const d  = Math.hypot(dx, dy);
+  if (d > JOY_MAX) { dx = dx / d * JOY_MAX; dy = dy / d * JOY_MAX; }
+  joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
+  joyH =  dx / JOY_MAX;
+  joyV = -dy / JOY_MAX; // 螢幕 Y 向下，遊戲前進向上，故取反
 }
-function joyPress(dir) {
-  joyPressed.add(dir); updateJoyState();
-  document.getElementById('joy-' + dir)?.classList.add('pressed');
+
+function joyReset() {
+  joyKnob.classList.add('snap');
+  joyKnob.style.transform = '';
+  joyH = 0; joyV = 0; joyDragging = false;
+  setTimeout(() => joyKnob.classList.remove('snap'), 160);
 }
-function joyRelease(dir) {
-  joyPressed.delete(dir); updateJoyState();
-  document.getElementById('joy-' + dir)?.classList.remove('pressed');
+
+// 觸控
+joyBase.addEventListener('touchstart',  e => { e.preventDefault(); joyDragging = true;  joyMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+joyBase.addEventListener('touchmove',   e => { e.preventDefault(); if (joyDragging) joyMove(e.touches[0].clientX, e.touches[0].clientY); },     { passive: false });
+joyBase.addEventListener('touchend',    e => { e.preventDefault(); joyReset(); }, { passive: false });
+joyBase.addEventListener('touchcancel', e => { e.preventDefault(); joyReset(); }, { passive: false });
+
+// 滑鼠（桌機測試）
+joyBase.addEventListener('mousedown', e => { joyDragging = true; joyMove(e.clientX, e.clientY); });
+document.addEventListener('mousemove', e => { if (joyDragging) joyMove(e.clientX, e.clientY); });
+document.addEventListener('mouseup',   () => { if (joyDragging) joyReset(); });
+
+// 鍵盤（WASD / 方向鍵）
+const KEY_MAP   = { ArrowUp:'u',w:'u',W:'u', ArrowDown:'d',s:'d',S:'d', ArrowLeft:'l',a:'l',A:'l', ArrowRight:'r',d:'r',D:'r' };
+const keyHeld   = new Set();
+function applyKeys() {
+  if (joyDragging) return;
+  const h = (keyHeld.has('r')?1:0) - (keyHeld.has('l')?1:0);
+  const v = (keyHeld.has('u')?1:0) - (keyHeld.has('d')?1:0);
+  joyH = h; joyV = v;
+  joyKnob.classList.remove('snap');
+  joyKnob.style.transform = (h||v) ? `translate(${h*JOY_MAX}px,${-v*JOY_MAX}px)` : '';
 }
+document.addEventListener('keydown', e => { const k=KEY_MAP[e.key]; if(k){ keyHeld.add(k);    applyKeys(); e.preventDefault(); } });
+document.addEventListener('keyup',   e => { const k=KEY_MAP[e.key]; if(k){ keyHeld.delete(k); applyKeys(); } });
+
 function sendJoystick() {
   if (!dc || dc.readyState !== 'open') return;
   const buf  = new ArrayBuffer(9);
@@ -245,34 +301,6 @@ function sendJoystick() {
   view.setFloat32(5, joyV, false);
   dc.send(buf);
 }
-
-// 按鈕事件（觸控 + 滑鼠）
-['up','left','right','down'].forEach(dir => {
-  const btn = document.getElementById('joy-' + dir);
-  if (!btn) return;
-  btn.addEventListener('touchstart',  e => { e.preventDefault(); joyPress(dir);   }, { passive: false });
-  btn.addEventListener('touchend',    e => { e.preventDefault(); joyRelease(dir); }, { passive: false });
-  btn.addEventListener('touchcancel', e => { e.preventDefault(); joyRelease(dir); }, { passive: false });
-  btn.addEventListener('mousedown',   ()  => joyPress(dir));
-  btn.addEventListener('mouseup',     ()  => joyRelease(dir));
-  btn.addEventListener('mouseleave',  ()  => joyRelease(dir));
-});
-
-// 鍵盤支援（WASD / 方向鍵）
-const KEY_MAP = {
-  ArrowUp:'up', w:'up', W:'up',
-  ArrowDown:'down', s:'down', S:'down',
-  ArrowLeft:'left', a:'left', A:'left',
-  ArrowRight:'right', d:'right', D:'right'
-};
-document.addEventListener('keydown', e => {
-  const dir = KEY_MAP[e.key];
-  if (dir) { joyPress(dir); e.preventDefault(); }
-});
-document.addEventListener('keyup', e => {
-  const dir = KEY_MAP[e.key];
-  if (dir) joyRelease(dir);
-});
 
 // ── Hz 計算 ───────────────────────────────────────────────
 setInterval(() => {
@@ -340,7 +368,7 @@ function setupPeerConnection() {
     };
     dc.onclose = () => {
       clearInterval(joyInterval); joyInterval = null;
-      joyPressed.clear(); joyH = joyV = 0;
+      joyReset();
       show('screen-permission');
     };
   };
@@ -360,7 +388,7 @@ async function tryWakeLock() {
 // ── 中斷連線 ──────────────────────────────────────────────
 document.getElementById('disconnect-btn').addEventListener('click', () => {
   clearInterval(joyInterval); joyInterval = null;
-  joyPressed.clear(); joyH = joyV = 0;
+  joyReset(); keyHeld.clear();
   dc?.close(); pc?.close(); ws?.close();
   dc = pc = ws = null;
   show('screen-permission');
