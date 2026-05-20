@@ -90,12 +90,12 @@ public partial class AccelerometerBallEffect
         pendingUprightFlip          = uprightSettings.axisFlip;
         pendingUprightDeadzone      = uprightSettings.axisDeadzone;
         pendingUprightSensitivity   = uprightSettings.sensitivity;
-        pendingUprightSwapXZ        = false;
+        pendingUprightSwapXZ        = uprightSettings.swapXZ;
         pendingUprightMinOutputStep = Vector3.zero;
         pendingFlatFlip             = flatSettings.axisFlip;
         pendingFlatDeadzone         = flatSettings.axisDeadzone;
         pendingFlatSensitivity      = flatSettings.sensitivity;
-        pendingFlatSwapXZ           = false;
+        pendingFlatSwapXZ           = flatSettings.swapXZ;
         pendingFlatMinOutputStep    = Vector3.zero;
         pendingFlatLinZClamp        = flatLinZClamp;
         pendingUprightIdleReturnZ   = uprightSettings.idleReturnStrength.z;
@@ -456,7 +456,7 @@ public partial class AccelerometerBallEffect
                     wizardLastStepResult = $"Z{(flipZ > 0 ? "正向" : "翻轉")} | 最大幅={maxDebiasedPeak:F2} → sensitivity.z={sensZ:F3} 最小步進={minStepZ:F2}";
                     // idleReturnStrength.z：最小衝程幅度越大→彈回越快；小動作場景→更保守
                     float refPeakU = wizardMinPeakMagnitude < float.MaxValue * 0.5f ? wizardMinPeakMagnitude : maxDebiasedPeak * 0.5f;
-                    pendingUprightIdleReturnZ = Mathf.Clamp(refPeakU * 0.04f, 0.02f, 0.25f);
+                    pendingUprightIdleReturnZ = Mathf.Clamp(refPeakU * 0.08f, 0.05f, 0.5f);
                     // 以直立峰值預設 flatLinZClamp，確保平放測量不被過早截斷
                     pendingFlatLinZClamp = Mathf.Max(maxDebiasedPeak * 2f, 8f);
                     AdvanceWizardPhase(); // → FlatTransition
@@ -495,11 +495,9 @@ public partial class AccelerometerBallEffect
         Vector3 oldFStep   = flatSettings.minOutputStep;
         bool    oldFSwap   = flatSettings.swapXZ;
 
-        // 嚮導只寫入它負責計算的欄位；maxOffsetPerAxis 和 axisScale 保留使用者設定值
-        uprightSettings.axisFlip      = pendingUprightFlip;
+        // 嚮導只寫入感測器量化參數；axisFlip / outputFlip / swapXZ 由使用者固定，不覆寫
         uprightSettings.axisDeadzone  = pendingUprightDeadzone;
         uprightSettings.sensitivity   = pendingUprightSensitivity;
-        uprightSettings.swapXZ        = pendingUprightSwapXZ;
         uprightSettings.minOutputStep = pendingUprightMinOutputStep;
         // idleReturnStrength.z：只改 z，保留使用者設定的 x、y
         var uIRS = uprightSettings.idleReturnStrength;
@@ -508,10 +506,8 @@ public partial class AccelerometerBallEffect
 
         if (pendingHasFlatResults)
         {
-            flatSettings.axisFlip      = pendingFlatFlip;
             flatSettings.axisDeadzone  = pendingFlatDeadzone;
             flatSettings.sensitivity   = pendingFlatSensitivity;
-            flatSettings.swapXZ        = pendingFlatSwapXZ;
             flatSettings.minOutputStep = pendingFlatMinOutputStep;
             var fIRS = flatSettings.idleReturnStrength;
             fIRS.z = pendingFlatIdleReturnZ;
@@ -535,9 +531,9 @@ public partial class AccelerometerBallEffect
         wizardStatusText     = "校正已套用！";
         Debug.Log($"[嚮導校正] 完成\n" +
                   $"  直立 flip={pendingUprightFlip} dz={pendingUprightDeadzone} sens=({pendingUprightSensitivity.x:F3},{pendingUprightSensitivity.y:F3},{pendingUprightSensitivity.z:F3}) swapXZ={pendingUprightSwapXZ} minStep={pendingUprightMinOutputStep}\n" +
-                  $"  直立 maxOff={uprightSettings.maxOffsetPerAxis} axisScale={uprightSettings.axisScale} (使用者設定，未修改)\n" +
+                  $"  直立 axisFlip={uprightSettings.axisFlip} outputFlip={uprightSettings.outputFlip} swapXZ={uprightSettings.swapXZ} maxOff={uprightSettings.maxOffsetPerAxis} axisScale={uprightSettings.axisScale} (使用者設定，未修改)\n" +
                   $"  平放 flip={pendingFlatFlip} dz={pendingFlatDeadzone} sens=({pendingFlatSensitivity.x:F3},{pendingFlatSensitivity.y:F3},{pendingFlatSensitivity.z:F3}) swapXZ={pendingFlatSwapXZ} minStep={pendingFlatMinOutputStep}\n" +
-                  $"  平放 maxOff={flatSettings.maxOffsetPerAxis} axisScale={flatSettings.axisScale} (使用者設定，未修改) (有結果={pendingHasFlatResults})\n" +
+                  $"  平放 axisFlip={flatSettings.axisFlip} outputFlip={flatSettings.outputFlip} swapXZ={flatSettings.swapXZ} maxOff={flatSettings.maxOffsetPerAxis} axisScale={flatSettings.axisScale} (使用者設定，未修改) (有結果={pendingHasFlatResults})\n" +
                   $"── 套用前後比對 ──\n" +
                   $"  [直立] sens  : ({oldUSens.x:F3},{oldUSens.y:F3},{oldUSens.z:F3}) → ({pendingUprightSensitivity.x:F3},{pendingUprightSensitivity.y:F3},{pendingUprightSensitivity.z:F3})\n" +
                   $"  [直立] dz    : ({oldUDz.x:F3},{oldUDz.y:F3},{oldUDz.z:F3}) → ({pendingUprightDeadzone.x:F3},{pendingUprightDeadzone.y:F3},{pendingUprightDeadzone.z:F3})\n" +
