@@ -57,6 +57,30 @@
     margin-top: 20px; padding: 12px 0; width: 100%; border-radius: 10px; border: 1px solid #555;
     background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
   }
+  #joystick-section { margin-top: 28px; }
+  #joystick-section h3 { font-size: 0.85rem; color: #666; margin-bottom: 14px; letter-spacing: 0.05em; }
+  #joystick-pad {
+    display: grid;
+    grid-template-areas: ". up ." "left . right" ". down .";
+    grid-template-columns: repeat(3, 68px);
+    grid-template-rows: repeat(3, 68px);
+    gap: 6px; margin: 0 auto; width: fit-content;
+  }
+  .joy-btn {
+    width: 68px; height: 68px; border-radius: 14px;
+    border: 1px solid #333; background: #1a1a2e; color: #fff;
+    font-size: 1.6rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; user-select: none;
+    transition: background 0.08s, border-color 0.08s;
+  }
+  .joy-btn.pressed { background: #2563eb; border-color: #3b82f6; }
+  #joy-up    { grid-area: up; }
+  #joy-left  { grid-area: left; }
+  #joy-right { grid-area: right; }
+  #joy-down  { grid-area: down; }
+  #joy-hint  { font-size: 0.72rem; color: #444; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -92,6 +116,17 @@
     <div id="sb-pkts">封包：0</div>
   </div>
   <button id="disconnect-btn">中斷連線</button>
+
+  <div id="joystick-section">
+    <h3>模擬搖桿</h3>
+    <div id="joystick-pad">
+      <button class="joy-btn" id="joy-up">↑</button>
+      <button class="joy-btn" id="joy-left">←</button>
+      <button class="joy-btn" id="joy-right">→</button>
+      <button class="joy-btn" id="joy-down">↓</button>
+    </div>
+    <p id="joy-hint">↑前進　↓後退　←左移　→右移　(支援鍵盤 WASD / ↑↓←→)</p>
+  </div>
 </div>
 
 <script>
@@ -184,6 +219,61 @@ function sendPacket() {
     `rotateZ(${-orientData.alpha}deg) rotateX(${orientData.beta}deg) rotateY(${orientData.gamma}deg)`;
 }
 
+// ── 模擬搖桿 ──────────────────────────────────────────────
+let joyH = 0, joyV = 0;
+const joyPressed = new Set();
+let joyInterval  = null;
+
+function updateJoyState() {
+  joyH = (joyPressed.has('right') ? 1 : 0) - (joyPressed.has('left') ? 1 : 0);
+  joyV = (joyPressed.has('up')    ? 1 : 0) - (joyPressed.has('down') ? 1 : 0);
+}
+function joyPress(dir) {
+  joyPressed.add(dir); updateJoyState();
+  document.getElementById('joy-' + dir)?.classList.add('pressed');
+}
+function joyRelease(dir) {
+  joyPressed.delete(dir); updateJoyState();
+  document.getElementById('joy-' + dir)?.classList.remove('pressed');
+}
+function sendJoystick() {
+  if (!dc || dc.readyState !== 'open') return;
+  const buf  = new ArrayBuffer(9);
+  const view = new DataView(buf);
+  view.setUint8(0, 0x02);
+  view.setFloat32(1, joyH, false);
+  view.setFloat32(5, joyV, false);
+  dc.send(buf);
+}
+
+// 按鈕事件（觸控 + 滑鼠）
+['up','left','right','down'].forEach(dir => {
+  const btn = document.getElementById('joy-' + dir);
+  if (!btn) return;
+  btn.addEventListener('touchstart',  e => { e.preventDefault(); joyPress(dir);   }, { passive: false });
+  btn.addEventListener('touchend',    e => { e.preventDefault(); joyRelease(dir); }, { passive: false });
+  btn.addEventListener('touchcancel', e => { e.preventDefault(); joyRelease(dir); }, { passive: false });
+  btn.addEventListener('mousedown',   ()  => joyPress(dir));
+  btn.addEventListener('mouseup',     ()  => joyRelease(dir));
+  btn.addEventListener('mouseleave',  ()  => joyRelease(dir));
+});
+
+// 鍵盤支援（WASD / 方向鍵）
+const KEY_MAP = {
+  ArrowUp:'up', w:'up', W:'up',
+  ArrowDown:'down', s:'down', S:'down',
+  ArrowLeft:'left', a:'left', A:'left',
+  ArrowRight:'right', d:'right', D:'right'
+};
+document.addEventListener('keydown', e => {
+  const dir = KEY_MAP[e.key];
+  if (dir) { joyPress(dir); e.preventDefault(); }
+});
+document.addEventListener('keyup', e => {
+  const dir = KEY_MAP[e.key];
+  if (dir) joyRelease(dir);
+});
+
 // ── Hz 計算 ───────────────────────────────────────────────
 setInterval(() => {
   const now = Date.now();
@@ -246,8 +336,13 @@ function setupPeerConnection() {
       document.getElementById('sb-mode').textContent = '模式：WebRTC P2P';
       show('screen-live');
       tryWakeLock();
+      joyInterval = setInterval(sendJoystick, 50); // 20 Hz
     };
-    dc.onclose = () => show('screen-permission');
+    dc.onclose = () => {
+      clearInterval(joyInterval); joyInterval = null;
+      joyPressed.clear(); joyH = joyV = 0;
+      show('screen-permission');
+    };
   };
 
   pc.onconnectionstatechange = () => {
@@ -264,6 +359,8 @@ async function tryWakeLock() {
 
 // ── 中斷連線 ──────────────────────────────────────────────
 document.getElementById('disconnect-btn').addEventListener('click', () => {
+  clearInterval(joyInterval); joyInterval = null;
+  joyPressed.clear(); joyH = joyV = 0;
   dc?.close(); pc?.close(); ws?.close();
   dc = pc = ws = null;
   show('screen-permission');

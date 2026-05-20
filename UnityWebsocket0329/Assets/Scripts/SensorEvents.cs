@@ -29,15 +29,24 @@ public static class SensorEvents
         public long   timestamp;
     }
 
+    [Serializable]
+    public class JoystickData
+    {
+        public float horizontal; // -1=左, 1=右
+        public float vertical;   // -1=後退, 1=前進
+    }
+
     // ── 靜態事件 ──────────────────────────────────────────────
 
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
     public static event Action<Vector3>       OnAccelerationReceived;
     public static event Action<PitchWaveData> OnPitchWaveReceived;
+    public static event Action<JoystickData>  OnJoystickReceived;
 
     // ── 觸發方法（供 UdpGyroscopeReceiver 呼叫）──────────────
 
     public static void RaiseGyroscopeDataReceived(GyroscopeData data) => OnGyroscopeDataReceived?.Invoke(data);
     public static void RaiseAccelerationReceived(Vector3 acc)         => OnAccelerationReceived?.Invoke(acc);
     public static void RaisePitchWaveReceived(PitchWaveData data)     => OnPitchWaveReceived?.Invoke(data);
+    public static void RaiseJoystickReceived(JoystickData data)       => OnJoystickReceived?.Invoke(data);
 }
