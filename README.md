@@ -175,8 +175,17 @@ railway up
 或在 [railway.app](https://railway.app) 直接連接 GitHub repo `unity-web-sensor`。  
 Or connect the GitHub repo directly on [railway.app](https://railway.app).
 
-部署後取得 `wss://xxx.up.railway.app`，更新 Unity 的 **Server Url**。  
-After deploy, update Unity **Server Url** to `wss://xxx.up.railway.app`.
+部署後更新 Unity 的 **Server Url**：  
+After deploy, update Unity **Server Url** to:
+
+```
+wss://wtb-sensor-production.up.railway.app
+```
+
+手機控制頁面 / Mobile controller:
+```
+https://wtb-sensor-production.up.railway.app/sensor.html
+```
 
 ---
 
