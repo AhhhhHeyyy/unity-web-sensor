@@ -11,7 +11,7 @@ using UnityEngine.Networking;
 public class QrCodeDisplay : MonoBehaviour
 {
     [Header("設定")]
-    [SerializeField] private string basePageUrl = "https://testgyroscopehtml-production.up.railway.app/sensor.html";
+    [SerializeField] private string basePageUrl = "https://wtb-sensor-production.up.railway.app/sensor.html";
     [SerializeField] private int    qrSize      = 300;
 
     [Header("參考")]
