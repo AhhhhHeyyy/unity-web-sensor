@@ -14,6 +14,7 @@ public partial class AccelerometerBallEffect
         FlatBaseline,        // 平放靜止 → tare + 噪聲死區
         FlatMaxGesture,      // 平放最大舒適幅度 → axisFlip.x + sensitivity.x
         FlatForward,         // 平放前後推 → axisFlip.z + sensitivity.z + idleReturnStrength.z + flatLinZClamp
+        CenterCalibration,   // 最後步驟：直立按「校正」按鈕完成中心點校正
         Done
     }
 
@@ -120,7 +121,7 @@ public partial class AccelerometerBallEffect
     private void UpdateWizard()
     {
         if (wizardPendingConfirm) return;
-        if (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done) return;
+        if (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done || wizardPhase == WizardPhase.CenterCalibration) return;
 
         // FlatTransition：自動等待平放偵測，不需要使用者按鍵
         if (wizardPhase == WizardPhase.FlatTransition)
@@ -198,8 +199,8 @@ public partial class AccelerometerBallEffect
         wizardRetryCount     = 0;
         phaseCompletePending = false;
         wizardPhase      = (WizardPhase)((int)wizardPhase + 1);
-        // FlatTransition 與 Done 不需要使用者按鍵；其餘 phase 顯示說明等待確認
-        wizardReadyToCollect = (wizardPhase == WizardPhase.FlatTransition || wizardPhase == WizardPhase.Done);
+        // FlatTransition、CenterCalibration 與 Done 不需要使用者按鍵；其餘 phase 顯示說明等待確認
+        wizardReadyToCollect = (wizardPhase == WizardPhase.FlatTransition || wizardPhase == WizardPhase.CenterCalibration || wizardPhase == WizardPhase.Done);
         wizardPeakZ            = 0f;
         wizardMinPeakMagnitude = float.MaxValue;
         wizardCurrentStrokeMax = 0f;
@@ -526,9 +527,10 @@ public partial class AccelerometerBallEffect
         if (phoneIsFlat) savedTareUpright = wizardUprightBaseline;
         else             savedTareFlat    = pendingHasFlatResults ? wizardFlatBaseline : savedTareFlat;
         wizardPendingConfirm = false;
-        wizardPhase          = WizardPhase.Done;
+        wizardPhase          = WizardPhase.CenterCalibration;
+        wizardReadyToCollect = true;
         wizardTimer          = 0f;
-        wizardStatusText     = "校正已套用！";
+        wizardStatusText     = "請直立手機完成中心校正";
         Debug.Log($"[嚮導校正] 完成\n" +
                   $"  直立 flip={pendingUprightFlip} dz={pendingUprightDeadzone} sens=({pendingUprightSensitivity.x:F3},{pendingUprightSensitivity.y:F3},{pendingUprightSensitivity.z:F3}) swapXZ={pendingUprightSwapXZ} minStep={pendingUprightMinOutputStep}\n" +
                   $"  直立 axisFlip={uprightSettings.axisFlip} outputFlip={uprightSettings.outputFlip} swapXZ={uprightSettings.swapXZ} maxOff={uprightSettings.maxOffsetPerAxis} axisScale={uprightSettings.axisScale} (使用者設定，未修改)\n" +

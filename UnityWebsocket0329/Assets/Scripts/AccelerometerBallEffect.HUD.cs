@@ -36,7 +36,14 @@ public partial class AccelerometerBallEffect
         {
             if (GUI.Button(new Rect(calibrationButtonPosition.x, calibrationButtonPosition.y,
                                     calibrationButtonSize.x,   calibrationButtonSize.y), "校正"))
+            {
                 Recalibrate();
+                if (wizardPhase == WizardPhase.CenterCalibration)
+                {
+                    wizardPhase      = WizardPhase.Idle;
+                    wizardStatusText = "等待啟動";
+                }
+            }
 
             if (calibrationMsgTimer > 0f)
             {
@@ -85,6 +92,7 @@ public partial class AccelerometerBallEffect
         float oh = wizardPendingConfirm ? (showZCompare ? 320f : 230f)
                  : !wizardReadyToCollect ? 240f
                  : wizardPhase == WizardPhase.FlatTransition ? 120f
+                 : wizardPhase == WizardPhase.CenterCalibration ? 210f
                  : isFwdPhase ? 270f
                  : isMaxGesturePhase ? 230f
                  : 190f;
@@ -102,7 +110,7 @@ public partial class AccelerometerBallEffect
 
         // ── 標題列 ──
         int phaseNum = (int)wizardPhase;
-        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 8)", boldStyle); iy += 24f;
+        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 9)", boldStyle); iy += 24f;
 
         // ── 確認摘要畫面 ──
         if (wizardPendingConfirm)
@@ -157,6 +165,23 @@ public partial class AccelerometerBallEffect
             iy += 38f;
             if (GUI.Button(new Rect(ix, iy, iw, 28f), "跳過平放校正"))
             { pendingHasFlatResults = false; wizardPendingConfirm = true; wizardStatusText = "已跳過平放，請按「確認套用」"; }
+            return;
+        }
+
+        // ── 最後步驟：中心點校正 ──
+        if (wizardPhase == WizardPhase.CenterCalibration)
+        {
+            GUI.Label(new Rect(ix, iy, iw, 44f), "[ 直立拿著手機 ]", arrowStyle); iy += 48f;
+            GUI.Label(new Rect(ix, iy, iw, 64f),
+                "螢幕朝向自己，手機自然直立靜止\n\n然後按左側的【校正】按鈕\n完成最後的中心點校正", baseStyle); iy += 68f;
+            var instrStyle = new GUIStyle(baseStyle)
+                { fontStyle = FontStyle.Bold, normal = { textColor = new Color(1f, 1f, 0.4f) } };
+            GUI.Label(new Rect(ix, iy, iw, 20f), "← 按「校正」按鈕即完成嚮導", instrStyle); iy += 28f;
+            if (GUI.Button(new Rect(ix, iy, iw, 28f), "跳過此步驟"))
+            {
+                wizardPhase      = WizardPhase.Idle;
+                wizardStatusText = "等待啟動";
+            }
             return;
         }
 
@@ -217,6 +242,7 @@ public partial class AccelerometerBallEffect
         WizardPhase.FlatBaseline        => "[ 靜止不動 ]",
         WizardPhase.FlatMaxGesture      => "→  往右傾斜（最大舒適）",
         WizardPhase.FlatForward         => "↑↓  前後移動",
+        WizardPhase.CenterCalibration   => "[ 直立拿著手機 ]",
         _                               => ""
     };
 
@@ -229,6 +255,7 @@ public partial class AccelerometerBallEffect
         WizardPhase.FlatBaseline        => "手機平放（螢幕朝上）\n保持靜止，不要動",
         WizardPhase.FlatMaxGesture      => $"手機平放\n往右傾斜到你的【最大舒適角度】並保持\n最大位移由 Max Offset Per Axis.x（目前={flatSettings.maxOffsetPerAxis.x:F1}）決定",
         WizardPhase.FlatForward         => "手機平放\n往前後來回推動幾次，用舒適的自然幅度",
+        WizardPhase.CenterCalibration   => "螢幕朝向自己，手機自然直立靜止\n然後按左側的【校正】按鈕\n完成最後的中心點校正",
         _                               => ""
     };
 

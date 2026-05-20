@@ -4,7 +4,7 @@
   "description": "陀螺儀WebSocket伺服器，支援Unity即時數據傳輸",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node webrtc-server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
