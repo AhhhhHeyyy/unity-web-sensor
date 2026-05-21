@@ -910,8 +910,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   speed: 5
   useLocalSpace: 0
-  invertHorizontal: 0
-  invertVertical: 0
+  invertHorizontal: 1
+  invertVertical: 1
 --- !u!1001 &931284148
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1395,7 +1395,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 13fdc001cc4811f49a736faf8ece8f8a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  signalingUrl: wss://testgyroscopehtml-production.up.railway.app
+  signalingUrl: 'wss://wtb-sensor-production.up.railway.app '
   debugLog: 0
   roomCode: 
   isConnected: 0
@@ -1562,7 +1562,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0b8ca4f20d473e34292b899191250d7f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  basePageUrl: https://testgyroscopehtml-production.up.railway.app/sensor.html
+  basePageUrl: https://wtb-sensor-production.up.railway.app/sensor.html
   qrSize: 300
   receiver: {fileID: 1054834765}
   roomCodeText: {fileID: 0}

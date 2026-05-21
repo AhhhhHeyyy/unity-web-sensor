@@ -58,7 +58,30 @@
     background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
   }
   #joystick-section { margin-top: 28px; }
-  #joystick-section h3 { font-size: 0.85rem; color: #555; margin-bottom: 16px; letter-spacing: 0.05em; }
+  #joy-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  #joy-section-header h3 { font-size: 0.85rem; color: #555; letter-spacing: 0.05em; margin: 0; }
+  #swap-btn {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid #444;
+    background: transparent; color: #888; font-size: 0.78rem; cursor: pointer;
+  }
+  #swap-btn:active { opacity: 0.7; }
+  #controls-row { display: flex; align-items: center; justify-content: center; gap: 24px; }
+  #controls-row.swapped { flex-direction: row-reverse; }
+  #grab-btn {
+    width: 100px; height: 100px; border-radius: 50%;
+    border: 2px solid rgba(239,68,68,0.55);
+    background: radial-gradient(circle at 40% 35%, #4e1a1a, #2c0a0a 75%, #1a0505);
+    color: #fff; font-size: 1rem; font-weight: 700;
+    cursor: pointer; touch-action: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 0 16px rgba(239,68,68,0.18);
+    transition: background 0.08s, box-shadow 0.08s, transform 0.08s;
+  }
+  #grab-btn.pressed {
+    background: radial-gradient(circle at 40% 35%, #b33030, #751c1c 75%, #430a0a);
+    box-shadow: 0 0 28px rgba(239,68,68,0.55);
+    transform: scale(0.95);
+  }
   #joy-base {
     position: relative; width: 220px; height: 220px; border-radius: 50%;
     background: radial-gradient(circle at 50% 50%, #0e3a4e 0%, #082030 65%, #041420 100%);
@@ -131,8 +154,13 @@
   <button id="disconnect-btn">中斷連線</button>
 
   <div id="joystick-section">
-    <h3>模擬搖桿</h3>
-    <div id="joy-base">
+    <div id="joy-section-header">
+      <h3>模擬搖桿</h3>
+      <button id="swap-btn">⇄ 左右對調</button>
+    </div>
+    <div id="controls-row">
+      <button id="grab-btn">抓取</button>
+      <div id="joy-base">
       <svg id="joy-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
         <!-- 外圈分段裝飾弧 -->
         <circle cx="110" cy="110" r="105" fill="none" stroke="#4dd9f0" stroke-width="3.5"
@@ -146,6 +174,7 @@
       <div class="joy-arrow joy-arrow-right"></div>
       <div id="joy-knob"></div>
     </div>
+    </div><!-- end controls-row -->
     <p id="joy-hint">拖曳搖桿移動　鍵盤 WASD / 方向鍵</p>
   </div>
 </div>
@@ -301,6 +330,28 @@ function sendJoystick() {
   view.setFloat32(5, joyV, false);
   dc.send(buf);
 }
+
+// ── 抓取按鈕 ─────────────────────────────────────────────
+const grabBtn = document.getElementById('grab-btn');
+
+function sendGrab(pressed) {
+  if (!dc || dc.readyState !== 'open') return;
+  dc.send(new Uint8Array([pressed ? 0x03 : 0x04]).buffer);
+}
+
+grabBtn.addEventListener('touchstart',  e => { e.preventDefault(); grabBtn.classList.add('pressed');    sendGrab(true);  }, { passive: false });
+grabBtn.addEventListener('touchend',    e => { e.preventDefault(); grabBtn.classList.remove('pressed'); sendGrab(false); }, { passive: false });
+grabBtn.addEventListener('touchcancel', e => { e.preventDefault(); grabBtn.classList.remove('pressed'); sendGrab(false); }, { passive: false });
+grabBtn.addEventListener('mousedown', () => { grabBtn.classList.add('pressed');    sendGrab(true);  });
+document.addEventListener('mouseup',  () => { if (grabBtn.classList.contains('pressed')) { grabBtn.classList.remove('pressed'); sendGrab(false); } });
+
+// ── 左右對調 ──────────────────────────────────────────────
+let swapped = false;
+document.getElementById('swap-btn').addEventListener('click', () => {
+  swapped = !swapped;
+  document.getElementById('controls-row').classList.toggle('swapped', swapped);
+  document.getElementById('swap-btn').textContent = swapped ? '⇄ 還原位置' : '⇄ 左右對調';
+});
 
 // ── Hz 計算 ───────────────────────────────────────────────
 setInterval(() => {
