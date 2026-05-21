@@ -272,6 +272,7 @@ function sendPacket() {
 // ── 模擬搖桿 ──────────────────────────────────────────────
 let joyH = 0, joyV = 0;
 let joyDragging  = false;
+let joyTouchId   = null; // 追蹤搖桿專屬的手指 ID
 let joyInterval  = null;
 const JOY_MAX    = 62; // knob 最大位移 px（(220/2) - (82/2) - 8）
 
@@ -292,15 +293,36 @@ function joyMove(clientX, clientY) {
 function joyReset() {
   joyKnob.classList.add('snap');
   joyKnob.style.transform = '';
-  joyH = 0; joyV = 0; joyDragging = false;
+  joyH = 0; joyV = 0; joyDragging = false; joyTouchId = null;
   setTimeout(() => joyKnob.classList.remove('snap'), 160);
 }
 
-// 觸控
-joyBase.addEventListener('touchstart',  e => { e.preventDefault(); joyDragging = true;  joyMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-joyBase.addEventListener('touchmove',   e => { e.preventDefault(); if (joyDragging) joyMove(e.touches[0].clientX, e.touches[0].clientY); },     { passive: false });
-joyBase.addEventListener('touchend',    e => { e.preventDefault(); joyReset(); }, { passive: false });
-joyBase.addEventListener('touchcancel', e => { e.preventDefault(); joyReset(); }, { passive: false });
+// 觸控（用 identifier 追蹤搖桿那根手指，避免多點觸控干擾）
+joyBase.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (joyTouchId !== null) return; // 已在追蹤，忽略額外的手指
+  const t = e.changedTouches[0];
+  joyTouchId = t.identifier;
+  joyDragging = true;
+  joyMove(t.clientX, t.clientY);
+}, { passive: false });
+
+joyBase.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!joyDragging) return;
+  const t = Array.from(e.touches).find(t => t.identifier === joyTouchId);
+  if (t) joyMove(t.clientX, t.clientY);
+}, { passive: false });
+
+joyBase.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (Array.from(e.changedTouches).some(t => t.identifier === joyTouchId)) joyReset();
+}, { passive: false });
+
+joyBase.addEventListener('touchcancel', e => {
+  e.preventDefault();
+  if (Array.from(e.changedTouches).some(t => t.identifier === joyTouchId)) joyReset();
+}, { passive: false });
 
 // 滑鼠（桌機測試）
 joyBase.addEventListener('mousedown', e => { joyDragging = true; joyMove(e.clientX, e.clientY); });
