@@ -9,9 +9,9 @@ const server = http.createServer(app);
 // 靜態檔案服務 - 指向TestHtml資料夾
 app.use(express.static(path.join(__dirname, 'TestHtml')));
 
-// 根路徑重導向到index.html
+// 根路徑重導向到sensor.html
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'TestHtml', 'index.html'));
+    res.sendFile(path.join(__dirname, 'TestHtml', 'sensor.html'));
 });
 
 // WebSocket伺服器
