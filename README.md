@@ -266,4 +266,12 @@ void HandleJoystick(Vector2 input)
 
 ---
 
+## 更新紀錄 / Changelog
+
+| 日期 | 更新內容 |
+|---|---|
+| 2026-06-02 | `sensor.html` 新增橫向切換按鈕（⤢ 橫向），使用 Screen Orientation API + Fullscreen 鎖定橫式；不支援時顯示提示訊息；監聽 `orientationchange` 自動同步按鈕狀態 |
+
+---
+
 MIT License

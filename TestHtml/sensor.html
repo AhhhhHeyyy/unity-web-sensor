@@ -53,10 +53,20 @@
   .left   { background: rgba(99,102,241,0.3); transform: rotateY(-90deg) translateZ(45px); }
   .top    { background: rgba(139,92,246,0.4); transform: rotateX(90deg)  translateZ(45px); }
   .bottom { background: rgba(139,92,246,0.3); transform: rotateX(-90deg) translateZ(45px); }
+  #conn-action-row {
+    display: flex; gap: 10px; margin-top: 20px;
+  }
   #disconnect-btn {
-    margin-top: 20px; padding: 12px 0; width: 100%; border-radius: 10px; border: 1px solid #555;
+    flex: 1; padding: 12px 0; border-radius: 10px; border: 1px solid #555;
     background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
   }
+  #landscape-btn {
+    padding: 12px 14px; border-radius: 10px; border: 1px solid #444;
+    background: transparent; color: #888; font-size: 0.9rem; cursor: pointer;
+    white-space: nowrap;
+  }
+  #landscape-btn:active { opacity: 0.7; }
+  #landscape-msg { font-size: 0.75rem; color: #f97316; margin-top: 6px; min-height: 1em; }
   #joystick-section { margin-top: 28px; }
   #joy-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
   #joy-section-header h3 { font-size: 0.85rem; color: #555; letter-spacing: 0.05em; margin: 0; }
@@ -151,7 +161,11 @@
     <div id="sb-hz">頻率：-</div>
     <div id="sb-pkts">封包：0</div>
   </div>
-  <button id="disconnect-btn">中斷連線</button>
+  <div id="conn-action-row">
+    <button id="disconnect-btn">中斷連線</button>
+    <button id="landscape-btn">⤢ 橫向</button>
+  </div>
+  <p id="landscape-msg"></p>
 
   <div id="joystick-section">
     <div id="joy-section-header">
@@ -465,6 +479,44 @@ document.getElementById('disconnect-btn').addEventListener('click', () => {
   dc?.close(); pc?.close(); ws?.close();
   dc = pc = ws = null;
   show('screen-permission');
+});
+
+// ── 橫式切換 ──────────────────────────────────────────────
+let isLandscape = false;
+const landscapeBtn = document.getElementById('landscape-btn');
+const landscapeMsg = document.getElementById('landscape-msg');
+
+landscapeBtn.addEventListener('click', async () => {
+  if (!isLandscape) {
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+      await screen.orientation.lock('landscape');
+      isLandscape = true;
+      landscapeBtn.textContent = '↩ 縱向';
+      landscapeMsg.textContent = '';
+    } catch(e) {
+      landscapeMsg.textContent = '請手動旋轉裝置至橫向';
+      setTimeout(() => { landscapeMsg.textContent = ''; }, 3000);
+    }
+  } else {
+    try { screen.orientation.unlock(); } catch(_) {}
+    if (document.exitFullscreen && document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+    }
+    isLandscape = false;
+    landscapeBtn.textContent = '⤢ 橫向';
+  }
+});
+
+// 使用者手動旋回縱向時同步按鈕狀態
+(screen.orientation || window).addEventListener('change', () => {
+  const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+  if (angle === 0 || angle === 180) {
+    isLandscape = false;
+    landscapeBtn.textContent = '⤢ 橫向';
+  }
 });
 
 // 輔助
