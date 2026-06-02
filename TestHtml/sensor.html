@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>感測器傳輸</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -126,7 +126,11 @@
   }
   #orient-btn:active { opacity: 0.7; }
   /* ── 橫式模式 ── */
-  body.landscape { padding: 0; }
+  body.landscape {
+    padding: 0; align-items: stretch;
+    --joy-size: min(220px, calc(100dvh - 52px));
+    --knob-size: min(82px, calc(var(--joy-size) * 0.375));
+  }
   body.landscape #screen-live {
     flex-direction: row; max-width: 100%; width: 100%;
     min-height: 100dvh; padding: 0; gap: 0; align-items: stretch;
@@ -134,14 +138,15 @@
   body.landscape #screen-live > h2 { display: none; }
   body.landscape .cube-wrap { display: none; }
   body.landscape #status-bar {
-    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    position: fixed; top: env(safe-area-inset-top, 8px); left: 50%; transform: translateX(-50%);
     width: auto; white-space: nowrap; margin: 0;
     padding: 5px 16px; font-size: 0.75rem;
     display: flex; flex-direction: row; gap: 14px; text-align: center;
   }
   body.landscape #status-bar div { margin: 0; }
   body.landscape #disconnect-btn {
-    position: fixed; bottom: 10px; right: 10px;
+    position: fixed; bottom: max(env(safe-area-inset-bottom, 0px), 10px);
+    right: max(env(safe-area-inset-right, 0px), 10px);
     width: auto; margin: 0; padding: 8px 18px;
   }
   body.landscape #joystick-section {
@@ -151,10 +156,43 @@
   body.landscape #joy-section-header { display: none; }
   body.landscape #joy-hint { display: none; }
   body.landscape #controls-row {
-    flex: 1; gap: 0; align-items: center; justify-content: space-around;
+    flex: 1; gap: 0; align-items: center;
   }
   body.landscape #grab-section {
     flex: 1; display: flex; align-items: center; justify-content: center;
+  }
+  body.landscape #joy-wrapper {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding-right: max(env(safe-area-inset-right, 0px), 8px);
+  }
+  /* ── 橫式自適應大小 ── */
+  body.landscape #joy-base {
+    width: var(--joy-size); height: var(--joy-size);
+  }
+  body.landscape #joy-knob {
+    width: var(--knob-size); height: var(--knob-size);
+    margin-top: calc(var(--knob-size) / -2);
+    margin-left: calc(var(--knob-size) / -2);
+    margin-bottom: 0; margin-right: 0;
+  }
+  body.landscape #joy-knob::after {
+    width: calc(var(--knob-size) * 0.61); height: calc(var(--knob-size) * 0.61);
+  }
+  body.landscape #grab-btn {
+    width: min(120px, calc(var(--joy-size) * 0.55));
+    height: min(120px, calc(var(--joy-size) * 0.55));
+    font-size: 1.05rem;
+  }
+  /* ── 防螢幕自動旋轉：手機旋回直式時，把橫式 UI 旋轉回來 ── */
+  @media screen and (orientation: portrait) {
+    body.landscape {
+      position: fixed;
+      width: 100dvh; height: 100dvw;
+      top: calc(50dvh - 50dvw);
+      left: calc(50dvw - 50dvh);
+      transform: rotate(90deg);
+      overflow: hidden;
+    }
   }
 </style>
 </head>
@@ -200,7 +238,7 @@
     </div>
     <div id="controls-row">
       <div id="grab-section"><button id="grab-btn">抓取</button></div>
-      <div id="joy-base">
+      <div id="joy-wrapper"><div id="joy-base">
       <svg id="joy-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
         <!-- 外圈分段裝飾弧 -->
         <circle cx="110" cy="110" r="105" fill="none" stroke="#4dd9f0" stroke-width="3.5"
@@ -213,7 +251,7 @@
       <div class="joy-arrow joy-arrow-left"></div>
       <div class="joy-arrow joy-arrow-right"></div>
       <div id="joy-knob"></div>
-    </div>
+    </div></div><!-- end joy-base / joy-wrapper -->
     </div><!-- end controls-row -->
     <p id="joy-hint">拖曳搖桿移動　鍵盤 WASD / 方向鍵</p>
   </div>
@@ -320,10 +358,26 @@ let joyH = 0, joyV = 0;
 let joyDragging  = false;
 let joyTouchId   = null; // 追蹤搖桿專屬的手指 ID
 let joyInterval  = null;
-const JOY_MAX    = 62; // knob 最大位移 px（(220/2) - (82/2) - 8）
+let JOY_MAX      = 62; // knob 最大位移 px，會在 updateJoyMax() 動態更新
 
 const joyBase = document.getElementById('joy-base');
 const joyKnob = document.getElementById('joy-knob');
+
+function updateJoyMax() {
+  const r = joyBase.getBoundingClientRect();
+  const k = joyKnob.getBoundingClientRect();
+  if (r.width > 0 && k.width > 0) JOY_MAX = Math.round((r.width / 2) - (k.width / 2) - 8);
+}
+
+async function tryLockOrientation(type) {
+  try {
+    if (screen.orientation && typeof screen.orientation.lock === 'function')
+      await screen.orientation.lock(type);
+  } catch(_) {}
+}
+function unlockOrientation() {
+  try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch(_) {}
+}
 
 function joyMove(clientX, clientY) {
   const r  = joyBase.getBoundingClientRect();
@@ -483,6 +537,8 @@ function setupPeerConnection() {
       document.getElementById('sb-mode').textContent = '模式：WebRTC P2P';
       show('screen-live');
       tryWakeLock();
+      tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
+      requestAnimationFrame(updateJoyMax); // CSS 渲染完後再取尺寸
       joyInterval = setInterval(sendJoystick, 50); // 20 Hz
     };
     dc.onclose = () => {
@@ -510,6 +566,7 @@ document.getElementById('disconnect-btn').addEventListener('click', () => {
   joyReset(); keyHeld.clear();
   dc?.close(); pc?.close(); ws?.close();
   dc = pc = ws = null;
+  unlockOrientation();
   show('screen-permission');
 });
 
@@ -518,6 +575,8 @@ document.getElementById('orient-btn').addEventListener('click', () => {
   isLandscape = !isLandscape;
   document.body.classList.toggle('landscape', isLandscape);
   document.getElementById('orient-btn').textContent = isLandscape ? '切換直式' : '切換橫式';
+  tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
+  requestAnimationFrame(updateJoyMax);
 });
 
 // 預設橫式
