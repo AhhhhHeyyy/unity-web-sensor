@@ -53,20 +53,10 @@
   .left   { background: rgba(99,102,241,0.3); transform: rotateY(-90deg) translateZ(45px); }
   .top    { background: rgba(139,92,246,0.4); transform: rotateX(90deg)  translateZ(45px); }
   .bottom { background: rgba(139,92,246,0.3); transform: rotateX(-90deg) translateZ(45px); }
-  #conn-action-row {
-    display: flex; gap: 10px; margin-top: 20px;
-  }
   #disconnect-btn {
-    flex: 1; padding: 12px 0; border-radius: 10px; border: 1px solid #555;
+    margin-top: 20px; padding: 12px 0; width: 100%; border-radius: 10px; border: 1px solid #555;
     background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
   }
-  #landscape-btn {
-    padding: 12px 14px; border-radius: 10px; border: 1px solid #444;
-    background: transparent; color: #888; font-size: 0.9rem; cursor: pointer;
-    white-space: nowrap;
-  }
-  #landscape-btn:active { opacity: 0.7; }
-  #landscape-msg { font-size: 0.75rem; color: #f97316; margin-top: 6px; min-height: 1em; }
   #joystick-section { margin-top: 28px; }
   #joy-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
   #joy-section-header h3 { font-size: 0.85rem; color: #555; letter-spacing: 0.05em; margin: 0; }
@@ -127,6 +117,45 @@
   }
   #joy-knob.snap { transition: transform 0.14s ease-out; }
   #joy-hint { font-size: 0.72rem; color: #444; margin-top: 12px; }
+  /* ── 橫直切換按鈕 ── */
+  #orient-btn {
+    position: fixed; top: 10px; right: 10px; z-index: 100;
+    padding: 6px 14px; border-radius: 8px;
+    border: 1px solid #444; background: rgba(15,15,15,0.88);
+    color: #aaa; font-size: 0.78rem; cursor: pointer;
+  }
+  #orient-btn:active { opacity: 0.7; }
+  /* ── 橫式模式 ── */
+  body.landscape { padding: 0; }
+  body.landscape #screen-live {
+    flex-direction: row; max-width: 100%; width: 100%;
+    min-height: 100dvh; padding: 0; gap: 0; align-items: stretch;
+  }
+  body.landscape #screen-live > h2 { display: none; }
+  body.landscape .cube-wrap { display: none; }
+  body.landscape #status-bar {
+    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    width: auto; white-space: nowrap; margin: 0;
+    padding: 5px 16px; font-size: 0.75rem;
+    display: flex; flex-direction: row; gap: 14px; text-align: center;
+  }
+  body.landscape #status-bar div { margin: 0; }
+  body.landscape #disconnect-btn {
+    position: fixed; bottom: 10px; right: 10px;
+    width: auto; margin: 0; padding: 8px 18px;
+  }
+  body.landscape #joystick-section {
+    flex: 1; margin: 0;
+    display: flex; flex-direction: column; align-items: stretch;
+  }
+  body.landscape #joy-section-header { display: none; }
+  body.landscape #joy-hint { display: none; }
+  body.landscape #controls-row {
+    flex: 1; gap: 0; align-items: center; justify-content: space-around;
+  }
+  body.landscape #grab-section {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+  }
 </style>
 </head>
 <body>
@@ -148,6 +177,7 @@
 <!-- 畫面3：傳輸中 -->
 <div id="screen-live" class="hidden">
   <h2><span class="status-dot green"></span>傳輸中</h2>
+  <button id="orient-btn">切換直式</button>
   <div class="cube-wrap"><div class="cube" id="cube">
     <div class="face front">前</div>
     <div class="face back">後</div>
@@ -161,11 +191,7 @@
     <div id="sb-hz">頻率：-</div>
     <div id="sb-pkts">封包：0</div>
   </div>
-  <div id="conn-action-row">
-    <button id="disconnect-btn">中斷連線</button>
-    <button id="landscape-btn">⤢ 橫向</button>
-  </div>
-  <p id="landscape-msg"></p>
+  <button id="disconnect-btn">中斷連線</button>
 
   <div id="joystick-section">
     <div id="joy-section-header">
@@ -173,7 +199,7 @@
       <button id="swap-btn">⇄ 左右對調</button>
     </div>
     <div id="controls-row">
-      <button id="grab-btn">抓取</button>
+      <div id="grab-section"><button id="grab-btn">抓取</button></div>
       <div id="joy-base">
       <svg id="joy-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
         <!-- 外圈分段裝飾弧 -->
@@ -264,7 +290,10 @@ function eulerToQuat(alpha, beta, gamma) {
 
 // ── 封包打包（28 bytes Big-Endian）──────────────────────
 function sendPacket() {
-  const q = eulerToQuat(orientData.alpha, orientData.beta, orientData.gamma);
+  // 右橫（右側朝下）時補正陀螺儀軸：beta_eff = -gamma, gamma_eff = beta
+  const effBeta  = isLandscape ? -orientData.gamma : orientData.beta;
+  const effGamma = isLandscape ?  orientData.beta  : orientData.gamma;
+  const q = eulerToQuat(orientData.alpha, effBeta, effGamma);
   const buf  = new ArrayBuffer(28);
   const view = new DataView(buf);
   view.setFloat32(0,  q.x,        false);
@@ -282,6 +311,9 @@ function sendPacket() {
   if (c) c.style.transform =
     `rotateZ(${-orientData.alpha}deg) rotateX(${orientData.beta}deg) rotateY(${orientData.gamma}deg)`;
 }
+
+// ── 橫直模式 ──────────────────────────────────────────────
+let isLandscape = true; // 預設橫式（右側朝下）
 
 // ── 模擬搖桿 ──────────────────────────────────────────────
 let joyH = 0, joyV = 0;
@@ -481,43 +513,15 @@ document.getElementById('disconnect-btn').addEventListener('click', () => {
   show('screen-permission');
 });
 
-// ── 橫式切換 ──────────────────────────────────────────────
-let isLandscape = false;
-const landscapeBtn = document.getElementById('landscape-btn');
-const landscapeMsg = document.getElementById('landscape-msg');
-
-landscapeBtn.addEventListener('click', async () => {
-  if (!isLandscape) {
-    try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-      }
-      await screen.orientation.lock('landscape');
-      isLandscape = true;
-      landscapeBtn.textContent = '↩ 縱向';
-      landscapeMsg.textContent = '';
-    } catch(e) {
-      landscapeMsg.textContent = '請手動旋轉裝置至橫向';
-      setTimeout(() => { landscapeMsg.textContent = ''; }, 3000);
-    }
-  } else {
-    try { screen.orientation.unlock(); } catch(_) {}
-    if (document.exitFullscreen && document.fullscreenElement) {
-      await document.exitFullscreen().catch(() => {});
-    }
-    isLandscape = false;
-    landscapeBtn.textContent = '⤢ 橫向';
-  }
+// ── 橫直切換 ──────────────────────────────────────────────
+document.getElementById('orient-btn').addEventListener('click', () => {
+  isLandscape = !isLandscape;
+  document.body.classList.toggle('landscape', isLandscape);
+  document.getElementById('orient-btn').textContent = isLandscape ? '切換直式' : '切換橫式';
 });
 
-// 使用者手動旋回縱向時同步按鈕狀態
-(screen.orientation || window).addEventListener('change', () => {
-  const angle = screen.orientation?.angle ?? window.orientation ?? 0;
-  if (angle === 0 || angle === 180) {
-    isLandscape = false;
-    landscapeBtn.textContent = '⤢ 橫向';
-  }
-});
+// 預設橫式
+document.body.classList.add('landscape');
 
 // 輔助
 function setConn(msg) { document.getElementById('conn-msg').textContent = msg; }
