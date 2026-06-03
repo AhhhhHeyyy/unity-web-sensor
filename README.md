@@ -268,9 +268,14 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
-| 日期 | 更新內容 |
-|---|---|
-| 2026-06-02 | `sensor.html` 新增橫向切換按鈕（⤢ 橫向），使用 Screen Orientation API + Fullscreen 鎖定橫式；不支援時顯示提示訊息；監聽 `orientationchange` 自動同步按鈕狀態 |
+### 2026-06-03
+**sensor.html — 直拿手機（橫式旋轉模式）版面修正**
+
+- **修正根本 bug**：`body { min-height: 100dvh }` 在 portrait+landscape 旋轉模式下蓋過 `height: 100dvw`，導致 body 變成 667×667 正方形，rotate 後整個版面往下偏移 146px；加入 `min-height: 0` 修正
+- **修正搖桿/抓取按鈕溢出**：`--joy-size` 從 `calc(100dvh - 52px)` 改為 `calc(50dvh - 10px)`（橫式）與 `calc(50dvw - 10px)`（直拿橫式），確保搖桿不超出 `controls-row` 高度
+- **控制區垂直置中**：`#grab-section` / `#joy-wrapper` 由 `align-items: flex-end + padding-bottom` 改為 `align-items: center`，按鈕置中於下半段
+- **按鈕上移**：`#controls-row` 加 `margin-bottom: 4dvh`（橫式）/ `4dvw`（直拿橫式），控制區略往上偏移
+- **新增 `?preview` 參數**：網址加 `?preview` 可跳過 WebRTC 連線直接預覽 UI
 
 ---
 

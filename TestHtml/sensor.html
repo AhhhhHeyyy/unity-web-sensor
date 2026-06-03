@@ -128,12 +128,13 @@
   /* ── 橫式模式 ── */
   body.landscape {
     padding: 0; align-items: stretch;
-    --joy-size: min(220px, calc(100dvh - 52px));
+    height: 100dvh; overflow: hidden;
+    --joy-size: min(220px, calc(50dvh - 10px));
     --knob-size: min(82px, calc(var(--joy-size) * 0.375));
   }
   body.landscape #screen-live {
-    flex-direction: row; max-width: 100%; width: 100%;
-    min-height: 100dvh; padding: 0; gap: 0; align-items: stretch;
+    display: flex; flex-direction: row; max-width: 100%; width: 100%;
+    height: 100dvh; padding: 0; gap: 0; align-items: stretch;
   }
   body.landscape #screen-live > h2 { display: none; }
   body.landscape .cube-wrap { display: none; }
@@ -152,18 +153,22 @@
   body.landscape #joystick-section {
     flex: 1; margin: 0;
     display: flex; flex-direction: column; align-items: stretch;
+    justify-content: flex-end;
   }
   body.landscape #joy-section-header { display: none; }
   body.landscape #joy-hint { display: none; }
   body.landscape #controls-row {
-    flex: 1; gap: 0; align-items: center;
+    height: 50dvh; gap: 0; align-items: stretch;
+    margin-bottom: 4dvh;
   }
   body.landscape #grab-section {
-    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex: 1; display: flex;
+    align-items: center; justify-content: center;
   }
   body.landscape #joy-wrapper {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-    padding-right: max(env(safe-area-inset-right, 0px), 8px);
+    flex: 1; display: flex;
+    align-items: center; justify-content: center;
+    padding-right: max(env(safe-area-inset-right, 0px), 2%);
   }
   /* ── 橫式自適應大小 ── */
   body.landscape #joy-base {
@@ -179,20 +184,28 @@
     width: calc(var(--knob-size) * 0.61); height: calc(var(--knob-size) * 0.61);
   }
   body.landscape #grab-btn {
-    width: min(120px, calc(var(--joy-size) * 0.55));
-    height: min(120px, calc(var(--joy-size) * 0.55));
-    font-size: 1.05rem;
+    width: min(150px, calc(var(--joy-size) * 0.68));
+    height: min(150px, calc(var(--joy-size) * 0.68));
+    font-size: 1.1rem;
   }
   /* ── 防螢幕自動旋轉：手機旋回直式時，把橫式 UI 旋轉回來 ── */
   @media screen and (orientation: portrait) {
     body.landscape {
       position: fixed;
       width: 100dvh; height: 100dvw;
+      min-height: 0;
       top: calc(50dvh - 50dvw);
       left: calc(50dvw - 50dvh);
       transform: rotate(90deg);
       overflow: hidden;
+      /* 旋轉後的 landscape 高度 = portrait 的 dvw */
+      --joy-size: min(220px, calc(50dvw - 10px));
     }
+    body.landscape #screen-live {
+      height: 100dvw; /* portrait dvw = 旋轉後的 landscape 高度 */
+    }
+    /* 旋轉後 dvh/dvw 互換：landscape 的「高度」= portrait dvw */
+    body.landscape #controls-row { height: 50dvw; margin-bottom: 4dvw; }
   }
 </style>
 </head>
@@ -581,6 +594,9 @@ document.getElementById('orient-btn').addEventListener('click', () => {
 
 // 預設橫式
 document.body.classList.add('landscape');
+
+// ?preview — 跳過連線直接看 UI（本地預覽用）
+if (params.has('preview')) show('screen-live');
 
 // 輔助
 function setConn(msg) { document.getElementById('conn-msg').textContent = msg; }
