@@ -13,8 +13,15 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 24px;
   }
-  #screen-permission, #screen-connecting, #screen-live { width: 100%; max-width: 360px; text-align: center; }
+  #screen-permission, #screen-live { width: 100%; max-width: 360px; text-align: center; }
+  #screen-live { position: relative; }
   .hidden { display: none !important; }
+  #connecting-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; background: rgba(15,15,15,0.92);
+  }
+  #connecting-overlay.hidden { display: none !important; }
   h2 { font-size: 1.4rem; margin-bottom: 8px; }
   p  { font-size: 0.9rem; color: #aaa; line-height: 1.5; }
   .btn {
@@ -219,14 +226,12 @@
   <p id="perm-err" style="color:#ef4444;margin-top:12px;"></p>
 </div>
 
-<!-- 畫面2：連線中 -->
-<div id="screen-connecting" class="hidden">
-  <h2>連線中…</h2>
-  <p id="conn-msg">正在連接 Signaling Server</p>
-</div>
-
-<!-- 畫面3：傳輸中 -->
+<!-- 畫面2：傳輸中（連線中時疊加遮罩顯示進度） -->
 <div id="screen-live" class="hidden">
+  <div id="connecting-overlay">
+    <h2>連線中…</h2>
+    <p id="conn-msg">正在連接 Signaling Server</p>
+  </div>
   <h2><span class="status-dot green"></span>傳輸中</h2>
   <button id="orient-btn">切換直式</button>
   <div class="cube-wrap"><div class="cube" id="cube">
@@ -286,7 +291,7 @@ let pktCount   = 0, hzCount = 0, lastHzTime = Date.now();
 
 // ── 畫面切換 ──────────────────────────────────────────────
 function show(id) {
-  ['screen-permission','screen-connecting','screen-live'].forEach(s =>
+  ['screen-permission','screen-live'].forEach(s =>
     document.getElementById(s).classList.toggle('hidden', s !== id));
   // 橫式旋轉樣式只在「傳輸中」畫面套用，避免其他畫面跟著被旋轉
   document.body.classList.toggle('landscape', id === 'screen-live' && isLandscape);
@@ -309,7 +314,8 @@ document.getElementById('btn-start').addEventListener('click', async () => {
     }
   }
   startSensors();
-  show('screen-connecting');
+  document.getElementById('connecting-overlay').classList.remove('hidden');
+  show('screen-live');
   connectSignaling();
 });
 
@@ -550,7 +556,7 @@ function setupPeerConnection() {
     dc = e.channel;
     dc.onopen  = () => {
       document.getElementById('sb-mode').textContent = '模式：WebRTC P2P';
-      show('screen-live');
+      document.getElementById('connecting-overlay').classList.add('hidden');
       tryWakeLock();
       tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
       requestAnimationFrame(updateJoyMax); // CSS 渲染完後再取尺寸
@@ -595,7 +601,10 @@ document.getElementById('orient-btn').addEventListener('click', () => {
 });
 
 // ?preview — 跳過連線直接看 UI（本地預覽用）
-if (params.has('preview')) show('screen-live');
+if (params.has('preview')) {
+  document.getElementById('connecting-overlay').classList.add('hidden');
+  show('screen-live');
+}
 
 // 輔助
 function setConn(msg) { document.getElementById('conn-msg').textContent = msg; }
