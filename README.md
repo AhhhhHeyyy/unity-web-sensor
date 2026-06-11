@@ -268,6 +268,23 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-12（三）
+**sensor.html — 直式模式按鈕排版調整；long0610 直升機改用陀螺儀四元數姿態控制**
+
+- **sensor.html 直式（非橫式）模式排版**：
+  - `#controls-row` 加上 `flex-wrap: wrap`，避免抓取／設定點／搖桿三者同排時超出螢幕寬度被裁切
+  - 用 `order` 與 `flex: 0 0 100%` 讓「抓取」與「搖桿」固定同一排，「設定點」獨立換到下一排置中
+  - 抓取鈕放大（100→130px，窄螢幕 110px）、搖桿縮小（220→190px，窄螢幕 170px），讓兩者大小較平均；`joy-knob` 同步等比縮放
+  - 直式模式下隱藏「模擬搖桿」標題文字，讓出空間給「⇄ 左右對調」按鈕
+- **long0610/sensor0610.html — 直升機姿態改用四元數**：
+  - 新增 `eulerToQuat()`（與 sensor.html `sendPacket()` 相同寫法），將陀螺儀 alpha/beta/gamma 轉為四元數，取代原本只用 `chopper.rotation.x/z` 控制俯仰／橫滾
+  - 新增 `cs.alphaOffset`：感測器啟動當下的 alpha 角度作為機頭正前方基準，`alphaRel = alpha - alphaOffset`
+  - 橫式持握時 `effBeta = -gamma`、`effGamma = beta`（與 sensor.html 的橫式校正一致）
+  - 移除原本以「玩家輸入方向」計算 `yawOffset` 的機頭轉向邏輯與 `TURN_SPEED`，機頭朝向改為直接反映裝置實際姿態（含 yaw）
+  - 中斷連線時重置 `cs.alphaOffset = null`，下次連線重新校正基準角
+
+---
+
 ### 2026-06-12（二）
 **sensor.html — 修正直拿橫式旋轉模式的版面裁切；long0610 場景偵錯面板數值調整**
 

@@ -63,13 +63,35 @@
   #joystick-section { margin-top: 28px; }
   #joy-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
   #joy-section-header h3 { font-size: 0.85rem; color: #555; letter-spacing: 0.05em; margin: 0; }
+  /* 直式（非橫式）模式：隱藏「模擬搖桿」標題，讓出空間給按鈕排版 */
+  body:not(.landscape) #joy-section-header { justify-content: flex-end; }
+  body:not(.landscape) #joy-section-header h3 { display: none; }
   #swap-btn {
     padding: 6px 14px; border-radius: 8px; border: 1px solid #444;
     background: transparent; color: #888; font-size: 0.78rem; cursor: pointer;
   }
   #swap-btn:active { opacity: 0.7; }
-  #controls-row { display: flex; align-items: center; justify-content: center; gap: 24px; }
+  #controls-row { display: flex; align-items: center; justify-content: center; gap: 16px 24px; flex-wrap: wrap; }
   #controls-row.swapped { flex-direction: row-reverse; }
+  /* 直式（非橫式）模式：抓取與搖桿固定同一排，設定點換到下一排置中 */
+  body:not(.landscape) #grab-section     { order: 1; }
+  body:not(.landscape) #joy-wrapper      { order: 2; }
+  body:not(.landscape) #setpoint-section {
+    order: 3; flex: 0 0 100%;
+    display: flex; justify-content: center;
+  }
+  /* 直式：抓取鈕放大、搖桿縮小，讓兩者大小較平均 */
+  body:not(.landscape) #grab-btn { width: 130px; height: 130px; font-size: 1.05rem; }
+  body:not(.landscape) #joy-base { width: 190px; height: 190px; }
+  body:not(.landscape) #joy-knob { width: 71px; height: 71px; margin: -35.5px 0 0 -35.5px; }
+  body:not(.landscape) #joy-knob::after { width: 43px; height: 43px; }
+  /* 窄螢幕：再縮小一階，確保兩者放得下同一排 */
+  @media (max-width: 400px) {
+    body:not(.landscape) #grab-btn { width: 110px; height: 110px; font-size: 1rem; }
+    body:not(.landscape) #joy-base { width: 170px; height: 170px; }
+    body:not(.landscape) #joy-knob { width: 63px; height: 63px; margin: -31.5px 0 0 -31.5px; }
+    body:not(.landscape) #joy-knob::after { width: 39px; height: 39px; }
+  }
   #grab-btn {
     width: 100px; height: 100px; border-radius: 50%;
     border: 2px solid rgba(239,68,68,0.55);
