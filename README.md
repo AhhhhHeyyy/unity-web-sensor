@@ -268,6 +268,17 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-12（二）
+**sensor.html — 修正直拿橫式旋轉模式的版面裁切；long0610 場景偵錯面板數值調整**
+
+- **修正版面裁切**：直拿手機看橫式 UI 時，抓取鈕／搖桿的上下緣會被裁掉。原因是旋轉容器用 `100vw`/`100vh`（含被網址列遮住的區域），實際可視高度比這個值小，`overflow:hidden` 因此裁掉超出可視範圍的內容
+  - 改用 JS（`updateViewportVars()`）讀取 `window.visualViewport` 的即時寬高，寫入 CSS 變數 `--vvw`/`--vvh`，旋轉容器與 `--joy-size`、`#controls-row` 高度都改用這兩個變數計算
+  - 不用 `dvh`/`dvw`：先前曾改用過，但網址列顯示/隱藏時會造成版面跳動（即 6/12 稍早一版已修正過的問題），改用 JS 量測可同時避免裁切與跳動
+  - `resize` / `orientationchange` / `visualViewport.resize` 事件都會重新量測並呼叫 `updateJoyMax()`
+- **long0610/sensor0610.html**：相機與城市場景偵錯面板的預設數值調整（`offsetY`、城市角度、移動範圍 X/Z、直升機初始位置等），用於場景視角微調
+
+---
+
 ### 2026-06-12
 **sensor.html — 新增「設定點」按鈕；橫式旋轉跑版修正；自動連線**
 

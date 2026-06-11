@@ -220,19 +220,22 @@
     body.landscape {
       position: fixed;
       min-height: 0;
-      top: 0; left: 100vw;
-      width: 100vh; height: 100vw;
+      top: 0; left: var(--vvw, 100vw);
+      width: var(--vvh, 100vh); height: var(--vvw, 100vw);
       transform-origin: 0 0;
       transform: rotate(90deg);
       overflow: hidden;
-      /* 旋轉後的 landscape 高度 = portrait 的 vw */
-      --joy-size: min(220px, calc(50vw - 10px));
+      /* 旋轉後的 landscape 高度 = portrait 的可視寬度（由 JS 依 visualViewport 即時更新） */
+      --joy-size: min(220px, calc(var(--vvw, 100vw) * 0.5 - 10px));
     }
     body.landscape #screen-live {
       height: 100%; /* 等於旋轉後的 landscape 高度 */
     }
-    /* 旋轉後 vh/vw 互換：landscape 的「高度」= portrait vw */
-    body.landscape #controls-row { height: 50vw; margin-bottom: 4vw; }
+    /* 旋轉後寬高互換：landscape 的「高度」= portrait 的可視寬度 */
+    body.landscape #controls-row {
+      height: calc(var(--vvw, 100vw) * 0.5);
+      margin-bottom: calc(var(--vvw, 100vw) * 0.04);
+    }
   }
 </style>
 </head>
@@ -301,6 +304,23 @@ let pktCount   = 0, hzCount = 0, lastHzTime = Date.now();
 // ── 橫直模式 ──────────────────────────────────────────────
 let isLandscape = true; // 預設橫式（右側朝下）
 document.body.classList.toggle('landscape', isLandscape);
+
+// ── 可視視窗尺寸（給直拿橫式旋轉用）────────────────────────
+// 不用 vw/vh（含被網址列遮住的區域，會造成裁切）也不用 dvh/dvw
+// （網址列顯示/隱藏時連動跳動），改用 visualViewport 的即時尺寸。
+function updateViewportVars() {
+  const vv = window.visualViewport;
+  const w  = vv ? vv.width  : window.innerWidth;
+  const h  = vv ? vv.height : window.innerHeight;
+  const root = document.documentElement.style;
+  root.setProperty('--vvw', `${w}px`);
+  root.setProperty('--vvh', `${h}px`);
+  requestAnimationFrame(updateJoyMax);
+}
+updateViewportVars();
+window.addEventListener('resize', updateViewportVars);
+window.addEventListener('orientationchange', () => requestAnimationFrame(updateViewportVars));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', updateViewportVars);
 
 // ── 啟動感測器與連線 ──────────────────────────────────────
 function startConnection() {

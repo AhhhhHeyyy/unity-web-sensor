@@ -282,8 +282,8 @@
       </div>
       <div class="cam-row">
         <label for="cam-y">offsetY</label>
-        <input type="range" id="cam-y" min="-40" max="40" step="0.5" value="7.5">
-        <span id="cam-y-val">7.5</span>
+        <input type="range" id="cam-y" min="-40" max="40" step="0.5" value="2">
+        <span id="cam-y-val">2</span>
         <input type="number" class="cam-max" id="cam-y-max" value="40" step="1">
       </div>
       <div class="cam-row">
@@ -342,21 +342,21 @@
       </div>
       <div class="cam-row">
         <label for="city-rot">城市角度</label>
-        <input type="range" id="city-rot" min="-180" max="180" step="1" value="0">
-        <span id="city-rot-val">0</span>
+        <input type="range" id="city-rot" min="-180" max="180" step="1" value="-180">
+        <span id="city-rot-val">-180</span>
         <input type="number" class="cam-max" id="city-rot-max" value="180" step="1">
       </div>
       <div class="cam-row">
         <label for="range-x">移動範圍X</label>
-        <input type="range" id="range-x" min="0.5" max="20" step="0.1" value="20">
-        <span id="range-x-val">20</span>
-        <input type="number" class="cam-max" id="range-x-max" value="20" step="1">
+        <input type="range" id="range-x" min="0.5" max="200" step="0.1" value="200">
+        <span id="range-x-val">200</span>
+        <input type="number" class="cam-max" id="range-x-max" value="200" step="1">
       </div>
       <div class="cam-row">
         <label for="range-z">移動範圍Z</label>
-        <input type="range" id="range-z" min="0.5" max="20" step="0.1" value="20">
-        <span id="range-z-val">20</span>
-        <input type="number" class="cam-max" id="range-z-max" value="20" step="1">
+        <input type="range" id="range-z" min="0.5" max="200" step="0.1" value="200">
+        <span id="range-z-val">200</span>
+        <input type="number" class="cam-max" id="range-z-max" value="200" step="1">
       </div>
       <div class="cam-row">
         <label for="chopper-scale">飛機縮放</label>
@@ -366,8 +366,8 @@
       </div>
       <div class="cam-row">
         <label for="chopper-x">飛機初始X</label>
-        <input type="range" id="chopper-x" min="-20" max="20" step="0.1" value="-0.2">
-        <span id="chopper-x-val">-0.2</span>
+        <input type="range" id="chopper-x" min="-20" max="20" step="0.1" value="-3.9">
+        <span id="chopper-x-val">-3.9</span>
         <input type="number" class="cam-max" id="chopper-x-max" value="20" step="1">
       </div>
       <div class="cam-row">
@@ -378,9 +378,9 @@
       </div>
       <div class="cam-row">
         <label for="chopper-z">飛機初始Z</label>
-        <input type="range" id="chopper-z" min="-20" max="20" step="0.1" value="0">
-        <span id="chopper-z-val">0</span>
-        <input type="number" class="cam-max" id="chopper-z-max" value="20" step="1">
+        <input type="range" id="chopper-z" min="-30" max="30" step="0.1" value="29.6">
+        <span id="chopper-z-val">29.6</span>
+        <input type="number" class="cam-max" id="chopper-z-max" value="30" step="1">
       </div>
     </div>
   </div>
@@ -433,7 +433,7 @@ document.getElementById('debug-toggle').addEventListener('click', () => {
 });
 
 // ── 相機偵錯面板（即時調整跟隨相機的偏移與視角）────────────
-window.cameraDebug = { x: 0, y: 7.5, z: 14, lookX: 0, lookY: 1.6, lookZ: 1.9, zoom: 2.6 };
+window.cameraDebug = { x: 0, y: 2, z: 14, lookX: 0, lookY: 1.6, lookZ: 1.9, zoom: 2.6 };
 ['x', 'y', 'z', 'look-x', 'look-y', 'look-z', 'zoom'].forEach(key => {
   const prop    = key.startsWith('look-') ? 'look' + key.slice(5).toUpperCase() : key;
   const input   = document.getElementById('cam-' + key);
@@ -456,7 +456,7 @@ window.cameraDebug = { x: 0, y: 7.5, z: 14, lookX: 0, lookY: 1.6, lookZ: 1.9, zo
 });
 
 // ── 城市場景縮放／位置／角度（即時調整）──────────────────
-window.cityDebug = { scale: 1.1, x: 3.7, y: -1.1, z: 6.5, rot: 0 };
+window.cityDebug = { scale: 1.1, x: 3.7, y: -1.1, z: 6.5, rot: -180 };
 [
   ['city-scale', 'scale'],
   ['city-x', 'x'],
@@ -483,7 +483,7 @@ window.cityDebug = { scale: 1.1, x: 3.7, y: -1.1, z: 6.5, rot: 0 };
 });
 
 // ── 直升機可移動範圍（即時調整）──────────────────────────
-window.moveRangeDebug = { x: 20, z: 20 };
+window.moveRangeDebug = { x: 200, z: 200 };
 [
   ['range-x', 'x'],
   ['range-z', 'z'],
@@ -524,7 +524,7 @@ window.chopperDebug = { scale: 1.2 };
 }
 
 // ── 直升機初始位置（即時調整，疊加在搖桿移動範圍之外）──────
-window.chopperPosDebug = { x: -0.2, y: 0, z: 0 };
+window.chopperPosDebug = { x: -3.9, y: 0, z: 29.6 };
 [
   ['chopper-x', 'x'],
   ['chopper-y', 'y'],
