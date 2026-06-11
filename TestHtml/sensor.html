@@ -277,6 +277,13 @@ let pktCount   = 0, hzCount = 0, lastHzTime = Date.now();
 let isLandscape = true; // 預設橫式（右側朝下）
 document.body.classList.toggle('landscape', isLandscape);
 
+// ── 啟動感測器與連線 ──────────────────────────────────────
+function startConnection() {
+  document.getElementById('btn-start').classList.add('hidden');
+  startSensors();
+  connectSignaling();
+}
+
 // ── iOS 權限按鈕 ──────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click', async () => {
   const sbConnText = document.getElementById('sb-conn-text');
@@ -297,10 +304,15 @@ document.getElementById('btn-start').addEventListener('click', async () => {
     }
   }
   sbConnText.classList.remove('error');
-  document.getElementById('btn-start').classList.add('hidden');
-  startSensors();
-  connectSignaling();
+  startConnection();
 });
+
+// 開啟頁面就自動傳送：iOS 13+ 需要使用者手動按鈕觸發感測器權限請求，
+// 其他瀏覽器（Android 等）不需要權限，直接自動開始連線
+if (!(typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function')) {
+  startConnection();
+}
 
 // ── 感測器監聽 ────────────────────────────────────────────
 function startSensors() {
