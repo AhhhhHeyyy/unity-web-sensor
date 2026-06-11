@@ -10,26 +10,22 @@
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     background: #0f0f0f; color: #fff;
     min-height: 100dvh;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    overflow-y: auto;
     padding: 24px;
   }
-  #screen-permission, #screen-live { width: 100%; max-width: 360px; text-align: center; }
-  #screen-live { position: relative; }
+  /* 內容裝得下時垂直置中；裝不下時從頂部開始並可捲動，避免內容被裁掉看不到 */
+  #screen-live { width: 100%; max-width: 360px; text-align: center; margin: auto 0; position: relative; }
   .hidden { display: none !important; }
-  #connecting-overlay {
-    position: fixed; inset: 0; z-index: 200;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 8px; background: rgba(15,15,15,0.92);
-  }
-  #connecting-overlay.hidden { display: none !important; }
   h2 { font-size: 1.4rem; margin-bottom: 8px; }
   p  { font-size: 0.9rem; color: #aaa; line-height: 1.5; }
-  .btn {
-    margin-top: 28px; padding: 16px 0; width: 100%; border-radius: 14px; border: none;
-    font-size: 1.1rem; font-weight: 600; cursor: pointer;
-    background: #2563eb; color: #fff;
+  .btn-small {
+    padding: 4px 12px; border-radius: 8px; border: none;
+    font-size: 0.78rem; font-weight: 600; cursor: pointer;
+    background: #2563eb; color: #fff; vertical-align: middle;
   }
-  .btn:active { opacity: 0.8; }
+  .btn-small:active { opacity: 0.8; }
+  #sb-conn-text.error { color: #ef4444; }
   .status-dot {
     display: inline-block; width: 10px; height: 10px; border-radius: 50%;
     margin-right: 6px; background: #facc15;
@@ -218,20 +214,7 @@
 </head>
 <body>
 
-<!-- 畫面1：請求感測器權限 -->
-<div id="screen-permission">
-  <h2>準備連線到 Unity</h2>
-  <p>點下方按鈕授予感測器權限，即可開始傳送資料。</p>
-  <button class="btn" id="btn-start">開始傳送感測器</button>
-  <p id="perm-err" style="color:#ef4444;margin-top:12px;"></p>
-</div>
-
-<!-- 畫面2：傳輸中（連線中時疊加遮罩顯示進度） -->
-<div id="screen-live" class="hidden">
-  <div id="connecting-overlay">
-    <h2>連線中…</h2>
-    <p id="conn-msg">正在連接 Signaling Server</p>
-  </div>
+<div id="screen-live">
   <h2><span class="status-dot green"></span>傳輸中</h2>
   <button id="orient-btn">切換直式</button>
   <div class="cube-wrap"><div class="cube" id="cube">
@@ -243,6 +226,7 @@
     <div class="face bottom">下</div>
   </div></div>
   <div id="status-bar">
+    <div id="sb-conn"><span id="sb-conn-text">準備連線到 Unity</span> <button id="btn-start" class="btn-small">開始傳送</button></div>
     <div id="sb-mode">模式：-</div>
     <div id="sb-hz">頻率：-</div>
     <div id="sb-pkts">封包：0</div>
@@ -289,33 +273,32 @@ let orientData = { alpha: 0, beta: 0, gamma: 0 };
 let accelData  = { x: 0, y: 0, z: 0 };
 let pktCount   = 0, hzCount = 0, lastHzTime = Date.now();
 
-// ── 畫面切換 ──────────────────────────────────────────────
-function show(id) {
-  ['screen-permission','screen-live'].forEach(s =>
-    document.getElementById(s).classList.toggle('hidden', s !== id));
-  // 橫式旋轉樣式只在「傳輸中」畫面套用，避免其他畫面跟著被旋轉
-  document.body.classList.toggle('landscape', id === 'screen-live' && isLandscape);
-}
+// ── 橫直模式 ──────────────────────────────────────────────
+let isLandscape = true; // 預設橫式（右側朝下）
+document.body.classList.toggle('landscape', isLandscape);
 
 // ── iOS 權限按鈕 ──────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click', async () => {
+  const sbConnText = document.getElementById('sb-conn-text');
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
       const r1 = await DeviceOrientationEvent.requestPermission();
       const r2 = await DeviceMotionEvent.requestPermission();
       if (r1 !== 'granted' || r2 !== 'granted') {
-        document.getElementById('perm-err').textContent = '請允許感測器權限';
+        sbConnText.textContent = '請允許感測器權限';
+        sbConnText.classList.add('error');
         return;
       }
     } catch(e) {
-      document.getElementById('perm-err').textContent = '權限請求失敗：' + e.message;
+      sbConnText.textContent = '權限請求失敗：' + e.message;
+      sbConnText.classList.add('error');
       return;
     }
   }
+  sbConnText.classList.remove('error');
+  document.getElementById('btn-start').classList.add('hidden');
   startSensors();
-  document.getElementById('connecting-overlay').classList.remove('hidden');
-  show('screen-live');
   connectSignaling();
 });
 
@@ -370,9 +353,6 @@ function sendPacket() {
   if (c) c.style.transform =
     `rotateZ(${-orientData.alpha}deg) rotateX(${orientData.beta}deg) rotateY(${orientData.gamma}deg)`;
 }
-
-// ── 橫直模式 ──────────────────────────────────────────────
-let isLandscape = true; // 預設橫式（右側朝下）
 
 // ── 模擬搖桿 ──────────────────────────────────────────────
 let joyH = 0, joyV = 0;
@@ -556,7 +536,7 @@ function setupPeerConnection() {
     dc = e.channel;
     dc.onopen  = () => {
       document.getElementById('sb-mode').textContent = '模式：WebRTC P2P';
-      document.getElementById('connecting-overlay').classList.add('hidden');
+      document.getElementById('sb-conn').classList.add('hidden');
       tryWakeLock();
       tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
       requestAnimationFrame(updateJoyMax); // CSS 渲染完後再取尺寸
@@ -565,7 +545,7 @@ function setupPeerConnection() {
     dc.onclose = () => {
       clearInterval(joyInterval); joyInterval = null;
       joyReset();
-      show('screen-permission');
+      resetConn();
     };
   };
 
@@ -588,7 +568,7 @@ document.getElementById('disconnect-btn').addEventListener('click', () => {
   dc?.close(); pc?.close(); ws?.close();
   dc = pc = ws = null;
   unlockOrientation();
-  show('screen-permission');
+  resetConn();
 });
 
 // ── 橫直切換 ──────────────────────────────────────────────
@@ -600,14 +580,19 @@ document.getElementById('orient-btn').addEventListener('click', () => {
   requestAnimationFrame(updateJoyMax);
 });
 
-// ?preview — 跳過連線直接看 UI（本地預覽用）
-if (params.has('preview')) {
-  document.getElementById('connecting-overlay').classList.add('hidden');
-  show('screen-live');
+// 輔助
+function setConn(msg) { document.getElementById('sb-conn-text').textContent = msg; }
+
+function resetConn() {
+  document.getElementById('sb-conn').classList.remove('hidden');
+  document.getElementById('sb-conn-text').textContent = '準備連線到 Unity';
+  document.getElementById('sb-conn-text').classList.remove('error');
+  document.getElementById('btn-start').classList.remove('hidden');
+  document.getElementById('sb-mode').textContent = '模式：-';
 }
 
-// 輔助
-function setConn(msg) { document.getElementById('conn-msg').textContent = msg; }
+// 畫面一開始就顯示操作頁，先量好搖桿尺寸
+requestAnimationFrame(updateJoyMax);
 </script>
 </body>
 </html>
