@@ -268,6 +268,22 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-12
+**sensor.html — 新增「設定點」按鈕；橫式旋轉跑版修正；自動連線**
+
+- **新增「設定點」按鈕**：`#controls-row` 中，抓取鈕與搖桿之間新增綠色圓形按鈕，按下時透過 WebRTC DataChannel 送出 **1-byte `0x05`** 訊息
+  - 格式延續抓取鈕（`0x03`=按下／`0x04`=放開）的 1-byte 指令慣例，`0x05` = 設定點
+  - ⚠️ Unity 端尚未實作接收：`dc.OnMessage` 過濾條件目前只放行 28-byte / 9-byte(0x02) / 1-byte(`0x03`,`0x04`)，`0x05` 會被直接丟棄；`SensorEvents.cs` 已有 `OnGrabPressed`/`OnGrabReleased`，但尚無 `OnSetPointReceived`
+  - 之後若要接上邏輯，需要：① `OnMessage` 過濾條件加入 `bytes.Length == 1 && bytes[0] == 0x05`　② `ProcessPacket()` 加判斷並呼叫 `SensorEvents.RaiseSetPointReceived()`　③ `SensorEvents.cs` 新增：
+    ```csharp
+    public static event Action OnSetPointReceived;
+    public static void RaiseSetPointReceived() => OnSetPointReceived?.Invoke();
+    ```
+- **修正橫式旋轉跑版**：直拿手機時用來模擬橫式的 `rotate(90deg)` hack，改用「貼右邊界 + 左上角為旋轉軸心」的標準寫法（`top:0; left:100vw; transform-origin:0 0`），取代原本混用 `dvh`/`dvw` 置中算式（在網址列顯示/隱藏時會跑位）；同時修正 `landscape` class 只在「傳輸中」畫面套用，避免連線/權限畫面被一起旋轉
+- **自動連線**：頁面載入後，若瀏覽器不需要 iOS 13+ 的 `requestPermission` 手勢觸發，會自動開始連線，不需再按「開始傳送」按鈕
+
+---
+
 ### 2026-06-03
 **sensor.html — 直拿手機（橫式旋轉模式）版面修正**
 

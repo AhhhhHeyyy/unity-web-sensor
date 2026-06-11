@@ -85,6 +85,21 @@
     box-shadow: 0 0 28px rgba(239,68,68,0.55);
     transform: scale(0.95);
   }
+  #setpoint-btn {
+    width: 90px; height: 90px; border-radius: 50%;
+    border: 2px solid rgba(34,197,94,0.55);
+    background: radial-gradient(circle at 40% 35%, #1a4e2a, #0a2c14 75%, #051a0a);
+    color: #fff; font-size: 0.95rem; font-weight: 700;
+    cursor: pointer; touch-action: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 0 16px rgba(34,197,94,0.18);
+    transition: background 0.08s, box-shadow 0.08s, transform 0.08s;
+  }
+  #setpoint-btn.pressed {
+    background: radial-gradient(circle at 40% 35%, #2f8a4e, #1c5230 75%, #0a3018);
+    box-shadow: 0 0 28px rgba(34,197,94,0.55);
+    transform: scale(0.95);
+  }
   #joy-base {
     position: relative; width: 220px; height: 220px; border-radius: 50%;
     background: radial-gradient(circle at 50% 50%, #0e3a4e 0%, #082030 65%, #041420 100%);
@@ -168,6 +183,10 @@
     flex: 1; display: flex;
     align-items: center; justify-content: center;
   }
+  body.landscape #setpoint-section {
+    flex: 1; display: flex;
+    align-items: center; justify-content: center;
+  }
   body.landscape #joy-wrapper {
     flex: 1; display: flex;
     align-items: center; justify-content: center;
@@ -190,6 +209,11 @@
     width: min(150px, calc(var(--joy-size) * 0.68));
     height: min(150px, calc(var(--joy-size) * 0.68));
     font-size: 1.1rem;
+  }
+  body.landscape #setpoint-btn {
+    width: min(120px, calc(var(--joy-size) * 0.55));
+    height: min(120px, calc(var(--joy-size) * 0.55));
+    font-size: 1rem;
   }
   /* ── 防螢幕自動旋轉：手機旋回直式時，把橫式 UI 旋轉回來 ── */
   @media screen and (orientation: portrait) {
@@ -240,6 +264,7 @@
     </div>
     <div id="controls-row">
       <div id="grab-section"><button id="grab-btn">抓取</button></div>
+      <div id="setpoint-section"><button id="setpoint-btn">設定點</button></div>
       <div id="joy-wrapper"><div id="joy-base">
       <svg id="joy-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
         <!-- 外圈分段裝飾弧 -->
@@ -479,6 +504,21 @@ grabBtn.addEventListener('touchend',    e => { e.preventDefault(); grabBtn.class
 grabBtn.addEventListener('touchcancel', e => { e.preventDefault(); grabBtn.classList.remove('pressed'); sendGrab(false); }, { passive: false });
 grabBtn.addEventListener('mousedown', () => { grabBtn.classList.add('pressed');    sendGrab(true);  });
 document.addEventListener('mouseup',  () => { if (grabBtn.classList.contains('pressed')) { grabBtn.classList.remove('pressed'); sendGrab(false); } });
+
+// ── 設定點按鈕 ───────────────────────────────────────────
+const setpointBtn = document.getElementById('setpoint-btn');
+
+function sendSetPoint() {
+  if (!dc || dc.readyState !== 'open') return;
+  dc.send(new Uint8Array([0x05]).buffer); // 1-byte：set point 指令
+}
+
+function flashSetPointBtn() {
+  setpointBtn.classList.add('pressed');
+  setTimeout(() => setpointBtn.classList.remove('pressed'), 150);
+}
+
+setpointBtn.addEventListener('click', () => { flashSetPointBtn(); sendSetPoint(); });
 
 // ── 左右對調 ──────────────────────────────────────────────
 let swapped = false;
