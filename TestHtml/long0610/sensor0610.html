@@ -889,24 +889,11 @@ function approachValue(current, target, delta) {
 }
 
 // ── 陀螺儀 → 四元數姿態 ────────────────────────────────────
-// Euler(ZXY，alpha/beta/gamma) → Quaternion，與 sensor.html 的 sendPacket() 相同寫法
-function eulerToQuat(alpha, beta, gamma) {
-  const a = alpha * Math.PI / 180;
-  const b = beta  * Math.PI / 180;
-  const g = gamma * Math.PI / 180;
-  const ca = Math.cos(a/2), sa = Math.sin(a/2);
-  const cb = Math.cos(b/2), sb = Math.sin(b/2);
-  const cg = Math.cos(g/2), sg = Math.sin(g/2);
-  return {
-    w: ca*cb*cg - sa*sb*sg,
-    x: ca*sb*cg - sa*cb*sg,
-    y: ca*cb*sg + sa*sb*cg,
-    z: sa*cb*cg + ca*sb*sg
-  };
-}
-
-// 裝置座標系（Z 朝上）→ three.js 座標系（Y 朝上）：繞 X 軸 -90 度
+// 採用 three.js DeviceOrientationControls 的標準作法：
+// Euler('YXZ') 對應 (beta→X 俯仰, alpha→Y 朝向/yaw, -gamma→Z 橫滾)，
+// 再乘上「裝置座標系（Z 朝上）→ three.js 座標系（Y 朝上）」的固定校正（繞 X 軸 -90 度）
 const DEVICE_TO_THREE = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
+const deviceEuler = new THREE.Euler();
 const deviceQuat = new THREE.Quaternion();
 // 機身旋轉偏移量（由偵錯面板的 X/Y/Z 滑桿即時調整）
 const offsetEuler = new THREE.Euler();
@@ -996,9 +983,13 @@ function animate() {
     const effBeta  = isLandscapeNow ? -state.orientData.gamma : state.orientData.beta;
     const effGamma = isLandscapeNow ?  state.orientData.beta  : state.orientData.gamma;
     const alphaRel = state.orientData.alpha - (state.alphaOffset ?? state.orientData.alpha);
-    // 前後傾斜（俯仰）對應 effGamma、左右傾斜（橫滾）對應 effBeta：與 effBeta/effGamma 的命名相反，故對調傳入順序
-    const q = eulerToQuat(alphaRel, effGamma, effBeta);
-    deviceQuat.set(q.x, q.y, q.z, q.w).multiply(DEVICE_TO_THREE);
+    deviceEuler.set(
+      THREE.MathUtils.degToRad(effBeta),
+      THREE.MathUtils.degToRad(alphaRel),
+      THREE.MathUtils.degToRad(-effGamma),
+      'YXZ'
+    );
+    deviceQuat.setFromEuler(deviceEuler).multiply(DEVICE_TO_THREE);
     offsetEuler.set(
       THREE.MathUtils.degToRad(chopperRotDebug.x),
       THREE.MathUtils.degToRad(chopperRotDebug.y),
