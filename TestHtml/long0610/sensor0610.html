@@ -382,6 +382,24 @@
         <span id="chopper-z-val">29.6</span>
         <input type="number" class="cam-max" id="chopper-z-max" value="30" step="1">
       </div>
+      <div class="cam-row">
+        <label for="chopper-rot-x">機身旋轉X</label>
+        <input type="range" id="chopper-rot-x" min="-180" max="180" step="1" value="0">
+        <span id="chopper-rot-x-val">0</span>
+        <input type="number" class="cam-max" id="chopper-rot-x-max" value="180" step="1">
+      </div>
+      <div class="cam-row">
+        <label for="chopper-rot-y">機身旋轉Y</label>
+        <input type="range" id="chopper-rot-y" min="-180" max="180" step="1" value="-90">
+        <span id="chopper-rot-y-val">-90</span>
+        <input type="number" class="cam-max" id="chopper-rot-y-max" value="180" step="1">
+      </div>
+      <div class="cam-row">
+        <label for="chopper-rot-z">機身旋轉Z</label>
+        <input type="range" id="chopper-rot-z" min="-180" max="180" step="1" value="0">
+        <span id="chopper-rot-z-val">0</span>
+        <input type="number" class="cam-max" id="chopper-rot-z-max" value="180" step="1">
+      </div>
     </div>
   </div>
 
@@ -537,6 +555,30 @@ window.chopperPosDebug = { x: -3.9, y: 0, z: 29.6 };
 
   input.addEventListener('input', () => {
     window.chopperPosDebug[prop] = parseFloat(input.value);
+    val.textContent = input.value;
+  });
+
+  maxIn.addEventListener('change', () => {
+    const m = parseFloat(maxIn.value);
+    if (!isFinite(m) || m <= 0) return;
+    input.max = m;
+    input.min = -m;
+  });
+});
+
+// ── 機身旋轉偏移量（度，即時調整，預設 Y=-90 對應原本的 BASE_YAW）───
+window.chopperRotDebug = { x: 0, y: -90, z: 0 };
+[
+  ['chopper-rot-x', 'x'],
+  ['chopper-rot-y', 'y'],
+  ['chopper-rot-z', 'z'],
+].forEach(([id, prop]) => {
+  const input = document.getElementById(id);
+  const val   = document.getElementById(id + '-val');
+  const maxIn = document.getElementById(id + '-max');
+
+  input.addEventListener('input', () => {
+    window.chopperRotDebug[prop] = parseFloat(input.value);
     val.textContent = input.value;
   });
 
@@ -812,15 +854,39 @@ const chopperPosDebug = window.chopperPosDebug;
 const movePos = new THREE.Vector3(0, 0, 0); // 飛行範圍內的相對位置（不含初始位置偏移）
 
 const MAX_SPEED  = 1.6;  // 最大移動速度（單位／秒）
-const ACCEL      = 10;   // 推搖桿時的加速反應速度
+const ACCEL      = 10;   // 推搖桿／陀螺儀輔助時的加速反應速度
 const DAMPING    = 3;    // 放開搖桿後的減速阻尼（越大停得越快）
-const BASE_YAW = -Math.PI / 2; // 模型靜止時面向 -X，偏移 -90 度後改為面向正前方（畫面內側 -Z）
+
+// 機身旋轉偏移量（度），即時數值由「偵錯面板」的旋轉滑桿控制（window.chopperRotDebug）
+// 預設 Y=-90 對應原本寫死的 BASE_YAW：模型靜止時面向 -X，偏移後改為面向正前方（畫面內側 -Z）
+const chopperRotDebug = window.chopperRotDebug;
+
+// 陀螺儀輔助上下／左右移動的死區與感應角度範圍（度）
+const TILT_DEADZONE = 5;
+const TILT_RANGE = 40;
 
 // 相機跟隨直升機的相對偏移量（世界座標，不隨機頭轉向旋轉）
 // 即時數值由畫面上的「相機偵錯面板」滑桿控制（window.cameraDebug）
 const camDebug = window.cameraDebug;
 
 const velocity = new THREE.Vector3(0, 0, 0); // 飛行速度（世界座標 x, y, z）
+
+// 將傾斜角度（度）轉換為 -1~1 的輔助移動量：死區內忽略，超過 TILT_RANGE 視為滿速
+function tiltToAssist(deg) {
+  const sign = Math.sign(deg);
+  const mag = Math.max(0, Math.abs(deg) - TILT_DEADZONE);
+  return sign * THREE.MathUtils.clamp(mag / (TILT_RANGE - TILT_DEADZONE), 0, 1);
+}
+
+// 速度逐步逼近目標值：目標非零時用 ACCEL（加速），目標為零時用 DAMPING（減速阻尼）
+function approachValue(current, target, delta) {
+  if (target !== 0) {
+    const k = Math.min(1, ACCEL * delta);
+    return current + (target - current) * k;
+  }
+  const damp = Math.max(0, 1 - DAMPING * delta);
+  return current * damp;
+}
 
 // ── 陀螺儀 → 四元數姿態 ────────────────────────────────────
 // Euler(ZXY，alpha/beta/gamma) → Quaternion，與 sensor.html 的 sendPacket() 相同寫法
@@ -841,11 +907,10 @@ function eulerToQuat(alpha, beta, gamma) {
 
 // 裝置座標系（Z 朝上）→ three.js 座標系（Y 朝上）：繞 X 軸 -90 度
 const DEVICE_TO_THREE = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
-// 模型朝向偏移（世界座標 yaw），對應原本的 BASE_YAW
-const BASE_YAW_QUAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), BASE_YAW);
 const deviceQuat = new THREE.Quaternion();
-const forwardDir = new THREE.Vector3();
-const rightDir = new THREE.Vector3();
+// 機身旋轉偏移量（由偵錯面板的 X/Y/Z 滑桿即時調整）
+const offsetEuler = new THREE.Euler();
+const offsetQuat = new THREE.Quaternion();
 
 // 城市街景場景，當作地面（取代原本的 GridHelper）
 // 即時縮放／位置／角度由「偵錯面板」的城市相關滑桿控制（window.cityDebug）
@@ -934,28 +999,23 @@ function animate() {
     // 前後傾斜（俯仰）對應 effGamma、左右傾斜（橫滾）對應 effBeta：與 effBeta/effGamma 的命名相反，故對調傳入順序
     const q = eulerToQuat(alphaRel, effGamma, effBeta);
     deviceQuat.set(q.x, q.y, q.z, q.w).multiply(DEVICE_TO_THREE);
-    chopper.quaternion.copy(BASE_YAW_QUAT).multiply(deviceQuat);
+    offsetEuler.set(
+      THREE.MathUtils.degToRad(chopperRotDebug.x),
+      THREE.MathUtils.degToRad(chopperRotDebug.y),
+      THREE.MathUtils.degToRad(chopperRotDebug.z)
+    );
+    offsetQuat.setFromEuler(offsetEuler);
+    chopper.quaternion.copy(offsetQuat).multiply(deviceQuat);
 
-    // 飛行模式：機頭朝向（機身姿態）決定移動方向，搖桿只控制推力大小
-    // V 軸 = 沿機頭方向前進／後退（俯仰角會讓飛機因此爬升或下降）
-    // H 軸 = 沿機身右側方向平移（轉向時跟著側移）
-    forwardDir.set(0, 0, -1).applyQuaternion(chopper.quaternion);
-    rightDir.set(1, 0, 0).applyQuaternion(chopper.quaternion);
+    // 搖桿固定控制水平前後左右（H=左右/X，V=前後/Z）
+    // 陀螺儀傾斜角額外輔助上下（Y）與左右（X）位移：前後傾斜→上升/下降，左右傾斜→左右平移
+    const targetVelX = state.joyH * MAX_SPEED + tiltToAssist(effGamma) * MAX_SPEED;
+    const targetVelY = tiltToAssist(effBeta) * MAX_SPEED;
+    const targetVelZ = -state.joyV * MAX_SPEED;
 
-    const inputForward = state.joyV;
-    const inputRight = state.joyH;
-    if (Math.hypot(inputForward, inputRight) > 0.01) {
-      const k = Math.min(1, ACCEL * delta);
-      const targetVelX = forwardDir.x * inputForward * MAX_SPEED + rightDir.x * inputRight * MAX_SPEED;
-      const targetVelY = forwardDir.y * inputForward * MAX_SPEED + rightDir.y * inputRight * MAX_SPEED;
-      const targetVelZ = forwardDir.z * inputForward * MAX_SPEED + rightDir.z * inputRight * MAX_SPEED;
-      velocity.x += (targetVelX - velocity.x) * k;
-      velocity.y += (targetVelY - velocity.y) * k;
-      velocity.z += (targetVelZ - velocity.z) * k;
-    } else {
-      const damp = Math.max(0, 1 - DAMPING * delta);
-      velocity.multiplyScalar(damp);
-    }
+    velocity.x = approachValue(velocity.x, targetVelX, delta);
+    velocity.y = approachValue(velocity.y, targetVelY, delta);
+    velocity.z = approachValue(velocity.z, targetVelZ, delta);
 
     const nextX = movePos.x + velocity.x * delta;
     const nextY = movePos.y + velocity.y * delta;
