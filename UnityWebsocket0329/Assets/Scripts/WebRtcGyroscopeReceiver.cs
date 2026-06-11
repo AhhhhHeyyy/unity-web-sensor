@@ -13,7 +13,7 @@ using NativeWebSocket;
 public class WebRtcGyroscopeReceiver : MonoBehaviour
 {
     [Header("Signaling")]
-    [SerializeField] private string signalingUrl = "wss://testgyroscopehtml-production.up.railway.app";
+    [SerializeField] private string signalingUrl = "wss://wtb-sensor-production.up.railway.app";
     [SerializeField] private bool   debugLog     = false;
 
     [Header("狀態（唯讀）")]

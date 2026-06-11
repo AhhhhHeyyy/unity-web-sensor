@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>感測器即時顯示</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0f0f0f; color: #fff;
+    height: 100dvh;
+    overflow-y: auto;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    padding: clamp(10px, 3dvh, 24px) 16px;
+    --joy-size: min(220px, 28dvh, 58vw);
+    --knob-size: min(82px, calc(var(--joy-size) * 0.375));
+  }
+  #screen-permission, #screen-live { width: 100%; max-width: 360px; text-align: center; }
+  #screen-permission { margin: auto 0; }
+  #screen-live {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  #display-half {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  #control-half {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: clamp(8px, 2dvh, 20px);
+  }
+  .hidden { display: none !important; }
+  h2 { font-size: 1.4rem; margin-bottom: 8px; }
+  p  { font-size: 0.9rem; color: #aaa; line-height: 1.5; }
+  .btn {
+    margin-top: 28px; padding: 16px 0; width: 100%; border-radius: 14px; border: none;
+    font-size: 1.1rem; font-weight: 600; cursor: pointer;
+    background: #2563eb; color: #fff;
+  }
+  .btn:active { opacity: 0.8; }
+  .status-dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    margin-right: 6px; background: #22c55e;
+  }
+  #status-bar {
+    width: 100%;
+    margin-top: clamp(8px, 2dvh, 24px); padding: 10px 16px; border-radius: 10px;
+    background: #1f1f1f; font-size: 0.85rem; text-align: left;
+  }
+  #status-bar div { margin: 3px 0; }
+  #three-wrap {
+    width: min(280px, 38dvh, 80vw);
+    height: min(280px, 38dvh, 80vw);
+    margin: clamp(8px, 2dvh, 20px) auto;
+    border-radius: 14px; overflow: hidden;
+    background: #111;
+  }
+  #three-wrap canvas { display: block; width: 100%; height: 100%; }
+  #disconnect-btn {
+    padding: 10px 0; width: 100%; border-radius: 10px; border: 1px solid #555;
+    background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
+  }
+  #joystick-section { width: 100%; }
+  #joy-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: clamp(6px, 1.5dvh, 16px); }
+  #joy-section-header h3 { font-size: 0.85rem; color: #555; letter-spacing: 0.05em; margin: 0; }
+  #swap-btn {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid #444;
+    background: transparent; color: #888; font-size: 0.78rem; cursor: pointer;
+  }
+  #swap-btn:active { opacity: 0.7; }
+  #controls-row { display: flex; align-items: center; justify-content: center; gap: 24px; }
+  #controls-row.swapped { flex-direction: row-reverse; }
+  #grab-btn {
+    width: min(100px, calc(var(--joy-size) * 0.5));
+    height: min(100px, calc(var(--joy-size) * 0.5));
+    border-radius: 50%;
+    border: 2px solid rgba(239,68,68,0.55);
+    background: radial-gradient(circle at 40% 35%, #4e1a1a, #2c0a0a 75%, #1a0505);
+    color: #fff; font-size: 1rem; font-weight: 700;
+    cursor: pointer; touch-action: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 0 16px rgba(239,68,68,0.18);
+    transition: background 0.08s, box-shadow 0.08s, transform 0.08s;
+  }
+  #grab-btn.pressed {
+    background: radial-gradient(circle at 40% 35%, #b33030, #751c1c 75%, #430a0a);
+    box-shadow: 0 0 28px rgba(239,68,68,0.55);
+    transform: scale(0.95);
+  }
+  #joy-base {
+    position: relative; width: var(--joy-size); height: var(--joy-size); border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, #0e3a4e 0%, #082030 65%, #041420 100%);
+    margin: 0 auto; touch-action: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; cursor: pointer;
+  }
+  #joy-svg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    overflow: visible; pointer-events: none;
+  }
+  .joy-arrow { position: absolute; width: 0; height: 0; opacity: 0.65; }
+  .joy-arrow-up    { top: 13px;    left: 50%; transform: translateX(-50%);
+    border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 13px solid #a8dde8; }
+  .joy-arrow-down  { bottom: 13px; left: 50%; transform: translateX(-50%);
+    border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 13px solid #a8dde8; }
+  .joy-arrow-left  { left: 13px;   top: 50%;  transform: translateY(-50%);
+    border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 13px solid #a8dde8; }
+  .joy-arrow-right { right: 13px;  top: 50%;  transform: translateY(-50%);
+    border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 13px solid #a8dde8; }
+  #joy-knob {
+    position: absolute; top: 50%; left: 50%;
+    width: var(--knob-size); height: var(--knob-size); border-radius: 50%;
+    margin: calc(var(--knob-size) / -2) 0 0 calc(var(--knob-size) / -2);
+    background: radial-gradient(circle at 40% 35%, #1e6080, #0c2e42 75%, #07202e);
+    border: 2px solid rgba(77,217,240,0.55);
+    box-shadow: 0 0 16px rgba(77,217,240,0.18);
+    will-change: transform;
+  }
+  #joy-knob::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(var(--knob-size) * 0.61); height: calc(var(--knob-size) * 0.61); border-radius: 50%;
+    border: 1px solid rgba(77,217,240,0.3);
+  }
+  #joy-knob.snap { transition: transform 0.14s ease-out; }
+  #joy-hint { font-size: 0.72rem; color: #444; margin-top: clamp(6px, 1.5dvh, 12px); }
+  /* ── 橫直切換按鈕 ── */
+  #orient-btn {
+    position: fixed; top: 10px; right: 10px; z-index: 100;
+    padding: 6px 14px; border-radius: 8px;
+    border: 1px solid #444; background: rgba(15,15,15,0.88);
+    color: #aaa; font-size: 0.78rem; cursor: pointer;
+  }
+  #orient-btn:active { opacity: 0.7; }
+  /* ── 橫式模式 ── */
+  body.landscape {
+    padding: 0; align-items: stretch;
+    height: 100dvh; overflow: hidden;
+    --joy-size: min(220px, calc(50dvh - 10px));
+    --knob-size: min(82px, calc(var(--joy-size) * 0.375));
+  }
+  body.landscape #screen-live {
+    display: flex; flex-direction: row; max-width: 100%; width: 100%;
+    height: 100dvh; padding: 0; gap: 0; align-items: stretch;
+  }
+  /* 橫式不分上下半，display-half/control-half 退化為純包裹（不產生 box），
+     讓內部元素直接成為 #screen-live 的 flex 項目 */
+  body.landscape #display-half,
+  body.landscape #control-half {
+    display: contents;
+  }
+  body.landscape #screen-live h2 { display: none; }
+  body.landscape #three-wrap { display: none; }
+  body.landscape #status-bar {
+    position: fixed; top: env(safe-area-inset-top, 8px); left: 50%; transform: translateX(-50%);
+    width: auto; white-space: nowrap; margin: 0;
+    padding: 5px 16px; font-size: 0.75rem;
+    display: flex; flex-direction: row; gap: 14px; text-align: center;
+  }
+  body.landscape #status-bar div { margin: 0; }
+  body.landscape #disconnect-btn {
+    position: fixed; bottom: max(env(safe-area-inset-bottom, 0px), 10px);
+    right: max(env(safe-area-inset-right, 0px), 10px);
+    width: auto; margin: 0; padding: 8px 18px;
+  }
+  body.landscape #joystick-section {
+    flex: 1; margin: 0;
+    display: flex; flex-direction: column; align-items: stretch;
+    justify-content: flex-end;
+  }
+  body.landscape #joy-section-header { display: none; }
+  body.landscape #joy-hint { display: none; }
+  body.landscape #controls-row {
+    height: 50dvh; gap: 0; align-items: stretch;
+    margin-bottom: 4dvh;
+  }
+  body.landscape #grab-section {
+    flex: 1; display: flex;
+    align-items: center; justify-content: center;
+  }
+  body.landscape #joy-wrapper {
+    flex: 1; display: flex;
+    align-items: center; justify-content: center;
+    padding-right: max(env(safe-area-inset-right, 0px), 2%);
+  }
+  /* ── 橫式自適應大小 ── */
+  body.landscape #grab-btn {
+    width: min(150px, calc(var(--joy-size) * 0.68));
+    height: min(150px, calc(var(--joy-size) * 0.68));
+    font-size: 1.1rem;
+  }
+  /* ── 防螢幕自動旋轉：手機旋回直式時，把橫式 UI 旋轉回來 ── */
+  @media screen and (orientation: portrait) {
+    body.landscape {
+      position: fixed;
+      width: 100dvh; height: 100dvw;
+      min-height: 0;
+      top: calc(50dvh - 50dvw);
+      left: calc(50dvw - 50dvh);
+      transform: rotate(90deg);
+      overflow: hidden;
+      /* 旋轉後的 landscape 高度 = portrait 的 dvw */
+      --joy-size: min(220px, calc(50dvw - 10px));
+    }
+    body.landscape #screen-live {
+      height: 100dvw; /* portrait dvw = 旋轉後的 landscape 高度 */
+    }
+    /* 旋轉後 dvh/dvw 互換：landscape 的「高度」= portrait dvw */
+    body.landscape #controls-row { height: 50dvw; margin-bottom: 4dvw; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 畫面1：請求感測器權限 -->
+<div id="screen-permission">
+  <h2>感測器即時顯示</h2>
+  <p>點下方按鈕授予感測器權限，即可在畫面上即時看到陀螺儀旋轉與搖桿位移數值。</p>
+  <button class="btn" id="btn-start">開始顯示</button>
+  <p id="perm-err" style="color:#ef4444;margin-top:12px;"></p>
+</div>
+
+<!-- 畫面2：即時顯示 -->
+<div id="screen-live" class="hidden">
+  <button id="orient-btn">切換橫式</button>
+
+  <!-- 上半：顯示層 -->
+  <div id="display-half">
+    <h2><span class="status-dot"></span>即時顯示中</h2>
+    <div id="three-wrap"></div>
+    <div id="status-bar">
+      <div id="sb-orient">姿態：α0.0° β0.0° γ0.0°</div>
+      <div id="sb-accel">加速度：x0.00 y0.00 z0.00</div>
+      <div id="sb-joy">搖桿：H0.00 V0.00</div>
+      <div id="sb-grab">抓取：放開</div>
+      <div id="sb-hz">頻率：- Hz</div>
+    </div>
+  </div>
+
+  <!-- 下半：操作層 -->
+  <div id="control-half">
+    <div id="joystick-section">
+      <div id="joy-section-header">
+        <h3>模擬搖桿</h3>
+        <button id="swap-btn">⇄ 左右對調</button>
+      </div>
+      <div id="controls-row">
+        <div id="grab-section"><button id="grab-btn">抓取</button></div>
+        <div id="joy-wrapper"><div id="joy-base">
+        <svg id="joy-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <!-- 外圈分段裝飾弧 -->
+          <circle cx="110" cy="110" r="105" fill="none" stroke="#4dd9f0" stroke-width="3.5"
+                  stroke-dasharray="118 47" stroke-dashoffset="-22" stroke-linecap="round"/>
+          <!-- 內圈 -->
+          <circle cx="110" cy="110" r="72" fill="none" stroke="rgba(77,217,240,0.18)" stroke-width="1"/>
+        </svg>
+        <div class="joy-arrow joy-arrow-up"></div>
+        <div class="joy-arrow joy-arrow-down"></div>
+        <div class="joy-arrow joy-arrow-left"></div>
+        <div class="joy-arrow joy-arrow-right"></div>
+        <div id="joy-knob"></div>
+      </div></div><!-- end joy-base / joy-wrapper -->
+      </div><!-- end controls-row -->
+      <p id="joy-hint">拖曳搖桿移動　鍵盤 WASD / 方向鍵</p>
+    </div>
+    <button id="disconnect-btn">停止</button>
+  </div>
+</div>
+
+<script>
+// 與 3D 模組共享的即時狀態
+window.controlState = {
+  orientData: { alpha: 0, beta: 0, gamma: 0 },
+  accelData:  { x: 0, y: 0, z: 0 },
+  joyH: 0, joyV: 0,
+  grabPressed: false
+};
+const cs = window.controlState;
+let hzCount = 0, lastHzTime = Date.now();
+let displayInterval = null, hzInterval = null;
+
+// ── 畫面切換 ──────────────────────────────────────────────
+function show(id) {
+  ['screen-permission','screen-live'].forEach(s =>
+    document.getElementById(s).classList.toggle('hidden', s !== id));
+}
+
+// ── iOS 權限按鈕 ──────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', async () => {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const r1 = await DeviceOrientationEvent.requestPermission();
+      const r2 = await DeviceMotionEvent.requestPermission();
+      if (r1 !== 'granted' || r2 !== 'granted') {
+        document.getElementById('perm-err').textContent = '請允許感測器權限';
+        return;
+      }
+    } catch(e) {
+      document.getElementById('perm-err').textContent = '權限請求失敗：' + e.message;
+      return;
+    }
+  }
+  startSensors();
+  show('screen-live');
+  tryWakeLock();
+  tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
+  requestAnimationFrame(updateJoyMax);
+  startDisplayLoop();
+});
+
+// ── 感測器監聽 ────────────────────────────────────────────
+function onOrientation(e) {
+  cs.orientData.alpha = e.alpha || 0;
+  cs.orientData.beta  = e.beta  || 0;
+  cs.orientData.gamma = e.gamma || 0;
+  hzCount++;
+}
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (a) {
+    cs.accelData.x = a.x || 0;
+    cs.accelData.y = a.y || 0;
+    cs.accelData.z = a.z || 0;
+  }
+}
+function startSensors() {
+  window.addEventListener('deviceorientation', onOrientation);
+  window.addEventListener('devicemotion', onMotion);
+}
+function stopSensors() {
+  window.removeEventListener('deviceorientation', onOrientation);
+  window.removeEventListener('devicemotion', onMotion);
+}
+
+// ── 橫直模式 ──────────────────────────────────────────────
+let isLandscape = false; // 預設直式
+
+// ── 模擬搖桿 ──────────────────────────────────────────────
+let joyDragging  = false;
+let joyTouchId   = null; // 追蹤搖桿專屬的手指 ID
+let JOY_MAX      = 62; // knob 最大位移 px，會在 updateJoyMax() 動態更新
+
+const joyBase = document.getElementById('joy-base');
+const joyKnob = document.getElementById('joy-knob');
+
+function updateJoyMax() {
+  const r = joyBase.getBoundingClientRect();
+  const k = joyKnob.getBoundingClientRect();
+  if (r.width > 0 && k.width > 0) JOY_MAX = Math.round((r.width / 2) - (k.width / 2) - 8);
+}
+
+async function tryLockOrientation(type) {
+  try {
+    if (screen.orientation && typeof screen.orientation.lock === 'function')
+      await screen.orientation.lock(type);
+  } catch(_) {}
+}
+function unlockOrientation() {
+  try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch(_) {}
+}
+
+function joyMove(clientX, clientY) {
+  const r  = joyBase.getBoundingClientRect();
+  let dx   = clientX - (r.left + r.width  / 2);
+  let dy   = clientY - (r.top  + r.height / 2);
+  const d  = Math.hypot(dx, dy);
+  if (d > JOY_MAX) { dx = dx / d * JOY_MAX; dy = dy / d * JOY_MAX; }
+  joyKnob.style.transform = `translate(${dx}px,${dy}px)`;
+  cs.joyH =  dx / JOY_MAX;
+  cs.joyV = -dy / JOY_MAX; // 螢幕 Y 向下，遊戲前進向上，故取反
+}
+
+function joyReset() {
+  joyKnob.classList.add('snap');
+  joyKnob.style.transform = '';
+  cs.joyH = 0; cs.joyV = 0; joyDragging = false; joyTouchId = null;
+  setTimeout(() => joyKnob.classList.remove('snap'), 160);
+}
+
+// 觸控（用 identifier 追蹤搖桿那根手指，避免多點觸控干擾）
+joyBase.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (joyTouchId !== null) return; // 已在追蹤，忽略額外的手指
+  const t = e.changedTouches[0];
+  joyTouchId = t.identifier;
+  joyDragging = true;
+  joyMove(t.clientX, t.clientY);
+}, { passive: false });
+
+joyBase.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!joyDragging) return;
+  const t = Array.from(e.touches).find(t => t.identifier === joyTouchId);
+  if (t) joyMove(t.clientX, t.clientY);
+}, { passive: false });
+
+joyBase.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (Array.from(e.changedTouches).some(t => t.identifier === joyTouchId)) joyReset();
+}, { passive: false });
+
+joyBase.addEventListener('touchcancel', e => {
+  e.preventDefault();
+  if (Array.from(e.changedTouches).some(t => t.identifier === joyTouchId)) joyReset();
+}, { passive: false });
+
+// 滑鼠（桌機測試）
+joyBase.addEventListener('mousedown', e => { joyDragging = true; joyMove(e.clientX, e.clientY); });
+document.addEventListener('mousemove', e => { if (joyDragging) joyMove(e.clientX, e.clientY); });
+document.addEventListener('mouseup',   () => { if (joyDragging) joyReset(); });
+
+// 鍵盤（WASD / 方向鍵）
+const KEY_MAP   = { ArrowUp:'u',w:'u',W:'u', ArrowDown:'d',s:'d',S:'d', ArrowLeft:'l',a:'l',A:'l', ArrowRight:'r',d:'r',D:'r' };
+const keyHeld   = new Set();
+function applyKeys() {
+  if (joyDragging) return;
+  const h = (keyHeld.has('r')?1:0) - (keyHeld.has('l')?1:0);
+  const v = (keyHeld.has('u')?1:0) - (keyHeld.has('d')?1:0);
+  cs.joyH = h; cs.joyV = v;
+  joyKnob.classList.remove('snap');
+  joyKnob.style.transform = (h||v) ? `translate(${h*JOY_MAX}px,${-v*JOY_MAX}px)` : '';
+}
+document.addEventListener('keydown', e => { const k=KEY_MAP[e.key]; if(k){ keyHeld.add(k);    applyKeys(); e.preventDefault(); } });
+document.addEventListener('keyup',   e => { const k=KEY_MAP[e.key]; if(k){ keyHeld.delete(k); applyKeys(); } });
+
+// ── 抓取按鈕 ─────────────────────────────────────────────
+const grabBtn = document.getElementById('grab-btn');
+
+function setGrab(pressed) {
+  cs.grabPressed = pressed;
+  grabBtn.classList.toggle('pressed', pressed);
+}
+
+grabBtn.addEventListener('touchstart',  e => { e.preventDefault(); setGrab(true);  }, { passive: false });
+grabBtn.addEventListener('touchend',    e => { e.preventDefault(); setGrab(false); }, { passive: false });
+grabBtn.addEventListener('touchcancel', e => { e.preventDefault(); setGrab(false); }, { passive: false });
+grabBtn.addEventListener('mousedown', () => setGrab(true));
+document.addEventListener('mouseup',  () => { if (cs.grabPressed) setGrab(false); });
+
+// ── 左右對調 ──────────────────────────────────────────────
+let swapped = false;
+document.getElementById('swap-btn').addEventListener('click', () => {
+  swapped = !swapped;
+  document.getElementById('controls-row').classList.toggle('swapped', swapped);
+  document.getElementById('swap-btn').textContent = swapped ? '⇄ 還原位置' : '⇄ 左右對調';
+});
+
+// ── 即時數值顯示 ──────────────────────────────────────────
+function startDisplayLoop() {
+  hzCount = 0; lastHzTime = Date.now();
+  hzInterval = setInterval(() => {
+    const now = Date.now();
+    const hz  = Math.round(hzCount * 1000 / (now - lastHzTime));
+    document.getElementById('sb-hz').textContent = `頻率：${hz} Hz`;
+    hzCount = 0; lastHzTime = now;
+  }, 1000);
+
+  displayInterval = setInterval(() => {
+    document.getElementById('sb-orient').textContent =
+      `姿態：α${cs.orientData.alpha.toFixed(1)}° β${cs.orientData.beta.toFixed(1)}° γ${cs.orientData.gamma.toFixed(1)}°`;
+    document.getElementById('sb-accel').textContent =
+      `加速度：x${cs.accelData.x.toFixed(2)} y${cs.accelData.y.toFixed(2)} z${cs.accelData.z.toFixed(2)}`;
+    document.getElementById('sb-joy').textContent =
+      `搖桿：H${cs.joyH.toFixed(2)} V${cs.joyV.toFixed(2)}`;
+    document.getElementById('sb-grab').textContent =
+      `抓取：${cs.grabPressed ? '按下' : '放開'}`;
+  }, 100);
+}
+function stopDisplayLoop() {
+  clearInterval(displayInterval); displayInterval = null;
+  clearInterval(hzInterval); hzInterval = null;
+}
+
+// ── Wake Lock（保持螢幕亮）────────────────────────────────
+async function tryWakeLock() {
+  try {
+    if ('wakeLock' in navigator) await navigator.wakeLock.request('screen');
+  } catch(_) {}
+}
+
+// ── 停止 ──────────────────────────────────────────────────
+document.getElementById('disconnect-btn').addEventListener('click', () => {
+  stopSensors();
+  stopDisplayLoop();
+  joyReset(); keyHeld.clear();
+  setGrab(false);
+  unlockOrientation();
+  show('screen-permission');
+});
+
+// ── 橫直切換 ──────────────────────────────────────────────
+document.getElementById('orient-btn').addEventListener('click', () => {
+  isLandscape = !isLandscape;
+  document.body.classList.toggle('landscape', isLandscape);
+  document.getElementById('orient-btn').textContent = isLandscape ? '切換直式' : '切換橫式';
+  tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
+  requestAnimationFrame(updateJoyMax);
+});
+
+</script>
+
+<!-- ── 3D 直升機模型：陀螺儀控制姿態、搖桿控制空間位置 ── -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const wrap = document.getElementById('three-wrap');
+const state = window.controlState;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+camera.position.set(0, 4, 9);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(3, 5, 2);
+scene.add(dirLight);
+
+// 地面網格，方便觀察搖桿造成的位置移動（大小配合可移動範圍，避免大片跑不到的區域）
+scene.add(new THREE.GridHelper(8, 24, 0x222222, 0x222222));
+
+// 搖桿可移動的範圍（世界座標單位）
+const POS_RANGE_X = 2.0; // 左右
+const POS_RANGE_Z = 3.6; // 前後
+
+const MAX_SPEED  = 1.6;  // 最大移動速度（單位／秒）
+const ACCEL      = 10;   // 推搖桿時的加速反應速度
+const DAMPING    = 3;    // 放開搖桿後的減速阻尼（越大停得越快）
+const TURN_SPEED = 2.5;  // 機頭轉向移動方向的速度（越小越平滑、越不會突然轉向）
+const BASE_YAW = -Math.PI / 2; // 模型靜止時面向 -X，偏移 -90 度後改為面向正前方（畫面內側 -Z）
+
+const velocity = new THREE.Vector2(0, 0); // x, z 方向速度
+let yawOffset = 0; // 機頭相對正前方的偏轉角（弧度）
+
+function wrapAngle(a) {
+  return a - Math.PI * 2 * Math.floor((a + Math.PI) / (Math.PI * 2));
+}
+
+let chopper = null;
+let mixer = null;
+new GLTFLoader().load('low_poly_helicopter.glb', gltf => {
+  const obj = gltf.scene;
+
+  // 置中並縮放到固定大小
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.sub(center);
+  const scale = 2.6 / Math.max(size.x, size.y, size.z);
+  obj.scale.setScalar(scale);
+
+  chopper = new THREE.Group();
+  chopper.rotation.order = 'YXZ';
+  chopper.add(obj);
+  scene.add(chopper);
+
+  // 播放模型內建動畫（例如旋翼自轉）
+  if (gltf.animations && gltf.animations.length) {
+    mixer = new THREE.AnimationMixer(obj);
+    gltf.animations.forEach(clip => mixer.clipAction(clip).play());
+  }
+});
+
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w === 0 || h === 0) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(wrap);
+resize();
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  if (mixer) mixer.update(delta);
+  if (chopper) {
+    // 陀螺儀 → 機身傾斜（俯仰／橫滾）
+    chopper.rotation.x = THREE.MathUtils.degToRad(state.orientData.beta);
+    chopper.rotation.z = THREE.MathUtils.degToRad(-state.orientData.gamma);
+
+    // 搖桿 → 速度（H 對應 X，V 對應 Z／前後），放開時用阻尼逐漸停下
+    const inputX = state.joyH;
+    const inputZ = -state.joyV;
+    if (Math.hypot(inputX, inputZ) > 0.01) {
+      const k = Math.min(1, ACCEL * delta);
+      velocity.x += (inputX * MAX_SPEED - velocity.x) * k;
+      velocity.y += (inputZ * MAX_SPEED - velocity.y) * k;
+    } else {
+      const damp = Math.max(0, 1 - DAMPING * delta);
+      velocity.x *= damp;
+      velocity.y *= damp;
+    }
+
+    const nextX = chopper.position.x + velocity.x * delta;
+    const nextZ = chopper.position.z + velocity.y * delta;
+    chopper.position.x = THREE.MathUtils.clamp(nextX, -POS_RANGE_X, POS_RANGE_X);
+    chopper.position.z = THREE.MathUtils.clamp(nextZ, -POS_RANGE_Z, POS_RANGE_Z);
+
+    // 撞到邊界時把朝牆壁方向的速度歸零，避免速度持續累積到 MAX_SPEED，
+    // 等搖桿反方向時瞬間以最大速度衝出去
+    if (nextX !== chopper.position.x) velocity.x = 0;
+    if (nextZ !== chopper.position.z) velocity.y = 0;
+
+    // 機頭朝向依「玩家輸入方向」判斷（而非實際速度），避免撞牆時該軸速度
+    // 被歸零、重新爬升，導致移動方向角度突變、機頭瞬間轉向
+    // inputZ < 0 為搖桿往前推：前進／側移時機頭朝向移動方向
+    // inputZ > 0 為搖桿往後拉（朝鏡頭）：維持目前朝向不變（不因倒退而轉身）
+    let targetOffset;
+    if (inputZ > 0.05) {
+      targetOffset = yawOffset; // 倒退時鎖定當前角度
+    } else if (Math.hypot(inputX, inputZ) > 0.05) {
+      targetOffset = Math.atan2(-inputX, -inputZ); // 移動方向（世界座標）
+    } else {
+      targetOffset = 0; // 無輸入：機頭回正
+    }
+    yawOffset += wrapAngle(targetOffset - yawOffset) * Math.min(1, TURN_SPEED * delta);
+    chopper.rotation.y = BASE_YAW + yawOffset;
+  }
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

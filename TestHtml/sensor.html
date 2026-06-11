@@ -192,20 +192,20 @@
   @media screen and (orientation: portrait) {
     body.landscape {
       position: fixed;
-      width: 100dvh; height: 100dvw;
       min-height: 0;
-      top: calc(50dvh - 50dvw);
-      left: calc(50dvw - 50dvh);
+      top: 0; left: 100vw;
+      width: 100vh; height: 100vw;
+      transform-origin: 0 0;
       transform: rotate(90deg);
       overflow: hidden;
-      /* 旋轉後的 landscape 高度 = portrait 的 dvw */
-      --joy-size: min(220px, calc(50dvw - 10px));
+      /* 旋轉後的 landscape 高度 = portrait 的 vw */
+      --joy-size: min(220px, calc(50vw - 10px));
     }
     body.landscape #screen-live {
-      height: 100dvw; /* portrait dvw = 旋轉後的 landscape 高度 */
+      height: 100%; /* 等於旋轉後的 landscape 高度 */
     }
-    /* 旋轉後 dvh/dvw 互換：landscape 的「高度」= portrait dvw */
-    body.landscape #controls-row { height: 50dvw; margin-bottom: 4dvw; }
+    /* 旋轉後 vh/vw 互換：landscape 的「高度」= portrait vw */
+    body.landscape #controls-row { height: 50vw; margin-bottom: 4vw; }
   }
 </style>
 </head>
@@ -288,6 +288,8 @@ let pktCount   = 0, hzCount = 0, lastHzTime = Date.now();
 function show(id) {
   ['screen-permission','screen-connecting','screen-live'].forEach(s =>
     document.getElementById(s).classList.toggle('hidden', s !== id));
+  // 橫式旋轉樣式只在「傳輸中」畫面套用，避免其他畫面跟著被旋轉
+  document.body.classList.toggle('landscape', id === 'screen-live' && isLandscape);
 }
 
 // ── iOS 權限按鈕 ──────────────────────────────────────────
@@ -591,9 +593,6 @@ document.getElementById('orient-btn').addEventListener('click', () => {
   tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
   requestAnimationFrame(updateJoyMax);
 });
-
-// 預設橫式
-document.body.classList.add('landscape');
 
 // ?preview — 跳過連線直接看 UI（本地預覽用）
 if (params.has('preview')) show('screen-live');

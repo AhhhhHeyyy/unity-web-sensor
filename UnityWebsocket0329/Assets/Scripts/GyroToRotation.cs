@@ -2,8 +2,26 @@ using UnityEngine;
 
 public class GyroToRotation : MonoBehaviour
 {
+    [Header("Arrow Settings")]
+    [SerializeField] private Transform arrowChild;
+    [SerializeField] private Transform target;
+
     private Quaternion pendingRotation = Quaternion.identity;
     private bool hasData = false;
+
+    void Start()
+    {
+        if (arrowChild != null && target != null)
+        {
+            Vector3 dir = target.position - transform.position;
+            dir.y = 0f;
+            if (dir.sqrMagnitude > 0.0001f)
+            {
+                Quaternion worldRot = Quaternion.LookRotation(dir);
+                arrowChild.localRotation = Quaternion.Inverse(transform.rotation) * worldRot;
+            }
+        }
+    }
 
     void OnEnable()
     {
