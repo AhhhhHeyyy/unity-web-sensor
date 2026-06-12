@@ -18,21 +18,25 @@
   }
   #screen-permission, #screen-live { width: 100%; max-width: 360px; text-align: center; }
   #screen-permission { margin: auto 0; }
+  /* 即時顯示畫面：相機/3D 視窗全螢幕，UI 搖桿以浮動層疊加在最上方 */
   #screen-live {
-    flex: 1; min-height: 0;
+    position: fixed; inset: 0; z-index: 1;
+    width: auto; max-width: none;
     display: flex; flex-direction: column;
   }
   #display-half {
-    flex: 1; min-height: 0;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
+    position: absolute; inset: 0;
   }
+  #display-half h2 { display: none; }
   #control-half {
-    flex: 1; min-height: 0;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
     display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
+    align-items: center; justify-content: flex-end;
     gap: clamp(8px, 2dvh, 20px);
+    padding: 0 16px max(env(safe-area-inset-bottom, 12px), 12px);
+    pointer-events: none;
   }
+  #control-half > * { pointer-events: auto; }
   .hidden { display: none !important; }
   h2 { font-size: 1.4rem; margin-bottom: 8px; }
   p  { font-size: 0.9rem; color: #aaa; line-height: 1.5; }
@@ -83,11 +87,9 @@
     border: 1px solid #444; background: #111; color: #888; font-size: 0.78rem;
   }
   #three-wrap {
-    position: relative;
-    width: min(280px, 38dvh, 80vw);
-    height: min(280px, 38dvh, 80vw);
-    margin: clamp(8px, 2dvh, 20px) auto;
-    border-radius: 14px; overflow: hidden;
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    margin: 0; border-radius: 0; overflow: hidden;
     background: #111;
   }
   #three-wrap canvas { display: block; width: 100%; height: 100%; position: relative; z-index: 1; background: transparent; }
@@ -162,7 +164,7 @@
     border: 1px solid rgba(77,217,240,0.3);
   }
   #joy-knob.snap { transition: transform 0.14s ease-out; }
-  #joy-hint { font-size: 0.72rem; color: #444; margin-top: clamp(6px, 1.5dvh, 12px); }
+  #joy-hint { display: none; font-size: 0.72rem; color: #444; margin-top: clamp(6px, 1.5dvh, 12px); }
   /* ── 橫直切換按鈕 ── */
   #orient-btn {
     position: fixed; top: 10px; right: 10px; z-index: 100;
@@ -178,18 +180,14 @@
     --joy-size: min(220px, calc(50dvh - 10px));
     --knob-size: min(82px, calc(var(--joy-size) * 0.375));
   }
-  body.landscape #screen-live {
-    display: flex; flex-direction: row; max-width: 100%; width: 100%;
-    height: 100dvh; padding: 0; gap: 0; align-items: stretch;
-  }
-  /* 橫式不分上下半，display-half/control-half 退化為純包裹（不產生 box），
-     讓內部元素直接成為 #screen-live 的 flex 項目 */
-  body.landscape #display-half,
+  /* 橫式：相機/3D 視窗（#display-half、#three-wrap 繼承自上方的全螢幕設定）維持全螢幕，
+     #control-half 改為橫向排列的浮動疊加層覆蓋整個畫面 */
   body.landscape #control-half {
-    display: contents;
+    inset: 0;
+    flex-direction: row;
+    align-items: stretch; justify-content: space-between;
+    padding: 0; gap: 0;
   }
-  body.landscape #screen-live h2 { display: none; }
-  body.landscape #three-wrap { display: none; }
   body.landscape #status-bar {
     position: fixed; top: env(safe-area-inset-top, 8px); left: 50%; transform: translateX(-50%);
     width: auto; white-space: nowrap; margin: 0;
@@ -380,8 +378,8 @@
       </div>
       <div class="cam-row">
         <label for="chopper-y">飛機初始Y</label>
-        <input type="range" id="chopper-y" min="-20" max="20" step="0.1" value="0">
-        <span id="chopper-y-val">0</span>
+        <input type="range" id="chopper-y" min="-20" max="20" step="0.1" value="1">
+        <span id="chopper-y-val">1</span>
         <input type="number" class="cam-max" id="chopper-y-max" value="20" step="1">
       </div>
       <div class="cam-row">
@@ -407,6 +405,34 @@
         <input type="range" id="chopper-rot-z" min="-180" max="180" step="1" value="-168">
         <span id="chopper-rot-z-val">-168</span>
         <input type="number" class="cam-max" id="chopper-rot-z-max" value="180" step="1">
+      </div>
+      <div class="cam-row">
+        <label for="chopper-arrow-offset">機身疊箭頭</label>
+        <input type="number" class="cam-max" id="chopper-arrow-offset-min" value="0" step="0.5">
+        <input type="range" id="chopper-arrow-offset" min="0" max="2" step="0.05" value="1">
+        <span id="chopper-arrow-offset-val">1</span>
+        <input type="number" class="cam-max" id="chopper-arrow-offset-max" value="2" step="1">
+      </div>
+      <div class="cam-row">
+        <label for="chopper-pivot-x">旋轉中心X</label>
+        <input type="number" class="cam-max" id="chopper-pivot-x-min" value="-2.9" step="0.5">
+        <input type="range" id="chopper-pivot-x" min="-2.9" max="2" step="0.05" value="-2.9">
+        <span id="chopper-pivot-x-val">-2.9</span>
+        <input type="number" class="cam-max" id="chopper-pivot-x-max" value="2" step="1">
+      </div>
+      <div class="cam-row">
+        <label for="chopper-pivot-y">旋轉中心Y</label>
+        <input type="number" class="cam-max" id="chopper-pivot-y-min" value="-2" step="0.5">
+        <input type="range" id="chopper-pivot-y" min="-2" max="2" step="0.05" value="0">
+        <span id="chopper-pivot-y-val">0</span>
+        <input type="number" class="cam-max" id="chopper-pivot-y-max" value="2" step="1">
+      </div>
+      <div class="cam-row">
+        <label for="chopper-pivot-z">旋轉中心Z</label>
+        <input type="number" class="cam-max" id="chopper-pivot-z-min" value="-2" step="0.5">
+        <input type="range" id="chopper-pivot-z" min="-2" max="2" step="0.05" value="0">
+        <span id="chopper-pivot-z-val">0</span>
+        <input type="number" class="cam-max" id="chopper-pivot-z-max" value="2" step="1">
       </div>
     </div>
   </div>
@@ -553,7 +579,7 @@ window.chopperDebug = { scale: 1.2 };
 }
 
 // ── 直升機初始位置（即時調整，疊加在搖桿移動範圍之外）──────
-window.chopperPosDebug = { x: 0, y: 0, z: 0 };
+window.chopperPosDebug = { x: 0, y: 1, z: 0 };
 [
   ['chopper-x', 'x'],
   ['chopper-y', 'y'],
@@ -575,6 +601,62 @@ window.chopperPosDebug = { x: 0, y: 0, z: 0 };
     input.min = -m;
   });
 });
+
+// ── 機身旋轉中心偏移（即時調整，相對模型幾何中心位移旋轉軸心）──────
+window.chopperPivotDebug = { x: -2.9, y: 0, z: 0 };
+[
+  ['chopper-pivot-x', 'x'],
+  ['chopper-pivot-y', 'y'],
+  ['chopper-pivot-z', 'z'],
+].forEach(([id, prop]) => {
+  const input = document.getElementById(id);
+  const val   = document.getElementById(id + '-val');
+  const minIn = document.getElementById(id + '-min');
+  const maxIn = document.getElementById(id + '-max');
+
+  input.addEventListener('input', () => {
+    window.chopperPivotDebug[prop] = parseFloat(input.value);
+    val.textContent = input.value;
+  });
+
+  minIn.addEventListener('change', () => {
+    const mn = parseFloat(minIn.value);
+    if (!isFinite(mn)) return;
+    input.min = mn;
+  });
+
+  maxIn.addEventListener('change', () => {
+    const m = parseFloat(maxIn.value);
+    if (!isFinite(m)) return;
+    input.max = m;
+  });
+});
+
+// ── 機身疊在朝向指示棒上的偏移量（即時調整，0=機身在邏輯位置，1=疊在箭頭尖端）──
+window.chopperArrowOffsetDebug = { value: 1 };
+{
+  const input = document.getElementById('chopper-arrow-offset');
+  const val   = document.getElementById('chopper-arrow-offset-val');
+  const minIn = document.getElementById('chopper-arrow-offset-min');
+  const maxIn = document.getElementById('chopper-arrow-offset-max');
+
+  input.addEventListener('input', () => {
+    window.chopperArrowOffsetDebug.value = parseFloat(input.value);
+    val.textContent = input.value;
+  });
+
+  minIn.addEventListener('change', () => {
+    const mn = parseFloat(minIn.value);
+    if (!isFinite(mn)) return;
+    input.min = mn;
+  });
+
+  maxIn.addEventListener('change', () => {
+    const m = parseFloat(maxIn.value);
+    if (!isFinite(m) || m <= 0) return;
+    input.max = m;
+  });
+}
 
 // ── 機身旋轉偏移量（度，即時調整，預設 Y=-90 對應原本的 BASE_YAW）───
 window.chopperRotDebug = { x: -168, y: -90, z: -168 };
@@ -879,11 +961,16 @@ const moveRangeDebug = window.moveRangeDebug;
 
 // 直升機初始位置（即時調整，疊加在搖桿移動範圍之外）
 const chopperPosDebug = window.chopperPosDebug;
+// 機身旋轉中心偏移（即時調整，相對模型幾何中心位移旋轉軸心）
+const chopperPivotDebug = window.chopperPivotDebug;
+// 機身疊在朝向指示棒上的偏移量（即時調整）
+const chopperArrowOffsetDebug = window.chopperArrowOffsetDebug;
 const movePos = new THREE.Vector3(0, 0, 0); // 飛行範圍內的相對位置（不含初始位置偏移）
 
 const MAX_SPEED  = 1.6;  // 最大移動速度（單位／秒）
 const ACCEL      = 10;   // 推搖桿／陀螺儀輔助時的加速反應速度
 const DAMPING    = 3;    // 放開搖桿後的減速阻尼（越大停得越快）
+const TURN_DAMPING = 6;  // 機身轉向跟隨朝向指示棒的阻尼（越大轉向越快）
 const TILT_DEADZONE = 0.05; // 上下飛行的傾斜死區（|flightForward.y| 小於此值視為 0）
 
 // 機身旋轉偏移量（度），即時數值由「偵錯面板」的旋轉滑桿控制（window.chopperRotDebug）
@@ -913,7 +1000,9 @@ const headingQuat = new THREE.Quaternion(); // 機身顯示朝向：對齊朝向
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 
 // 朝向指示棒：顯示目前搖桿輸入會飛去的實際方向（無輸入時顯示機身前方）
-const headingArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 3, 0xffcc00, 0.8, 0.4);
+const HEADING_ARROW_LENGTH = 1;
+const headingArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), HEADING_ARROW_LENGTH, 0xffcc00, 0.8, 0.4);
+headingArrow.visible = false; // 隱藏朝向指示棒
 scene.add(headingArrow);
 
 // 速度逐步逼近目標值：目標非零時用 ACCEL（加速），目標為零時用 DAMPING（減速阻尼）
@@ -973,6 +1062,7 @@ new GLTFLoader().load('city-street_free_for_game.glb', gltf => {
 // 即時縮放倍率由「偵錯面板」的飛機縮放滑桿控制（window.chopperDebug）
 const chopperDebug = window.chopperDebug;
 let chopperModel = null, chopperBaseScale = 1;
+let chopperBasePos = null;
 
 let chopper = null;
 let mixer = null;
@@ -984,6 +1074,7 @@ new GLTFLoader().load('low_poly_helicopter.glb', gltf => {
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   obj.position.sub(center);
+  chopperBasePos = obj.position.clone(); // 模型置中後的基準位置，旋轉中心偏移以此為基準
   chopperBaseScale = 2.6 / Math.max(size.x, size.y, size.z);
   chopperModel = obj;
   obj.scale.setScalar(chopperBaseScale * chopperDebug.scale);
@@ -1015,7 +1106,15 @@ function animate() {
   const delta = clock.getDelta();
   if (mixer) mixer.update(delta);
   applyCityTransform();
-  if (chopperModel) chopperModel.scale.setScalar(chopperBaseScale * chopperDebug.scale);
+  if (chopperModel) {
+    chopperModel.scale.setScalar(chopperBaseScale * chopperDebug.scale);
+    // 旋轉中心偏移：模型相對 chopper 群組原點（旋轉軸心）反向位移，等效於把旋轉軸心移到偏移處
+    chopperModel.position.set(
+      chopperBasePos.x - chopperPivotDebug.x,
+      chopperBasePos.y - chopperPivotDebug.y,
+      chopperBasePos.z - chopperPivotDebug.z
+    );
+  }
   if (chopper) {
     // 陀螺儀 → 機身姿態（俯仰／橫滾／朝向），橫式持握時 beta/gamma 互換校正
     const isLandscapeNow = document.body.classList.contains('landscape');
@@ -1078,8 +1177,7 @@ function animate() {
       .multiplyScalar(MAX_SPEED);
     targetVel.y = vertInput * MAX_SPEED;
 
-    // 更新朝向指示棒：有實際飛行速度（搖桿輸入，含其疊加的傾斜垂直分量）時指向該方向，否則顯示機身前方
-    headingArrow.position.copy(chopper.position);
+    // 更新朝向指示棒方向：有實際飛行速度（搖桿輸入，含其疊加的傾斜垂直分量）時指向該方向，否則顯示機身前方
     if (targetVel.lengthSq() > 1e-6) {
       headingArrowDir.copy(targetVel).normalize();
     } else {
@@ -1088,8 +1186,9 @@ function animate() {
     headingArrow.setDirection(headingArrowDir);
 
     // 機身顯示朝向跟隨朝向指示棒（飛行方向），offsetQuat 維持模型的基準校正
-    headingQuat.setFromUnitVectors(FORWARD_AXIS, headingArrowDir);
-    chopper.quaternion.copy(headingQuat).multiply(offsetQuat);
+    // 用 slerp 加阻尼，避免搖桿瞬間轉向時機身角度突然跳變
+    headingQuat.setFromUnitVectors(FORWARD_AXIS, headingArrowDir).multiply(offsetQuat);
+    chopper.quaternion.slerp(headingQuat, Math.min(1, TURN_DAMPING * delta));
 
     velocity.x = approachValue(velocity.x, targetVel.x, delta);
     velocity.y = approachValue(velocity.y, targetVel.y, delta);
@@ -1112,6 +1211,12 @@ function animate() {
     chopper.position.x = movePos.x + chopperPosDebug.x;
     chopper.position.y = movePos.y + chopperPosDebug.y;
     chopper.position.z = movePos.z + chopperPosDebug.z;
+
+    // 朝向指示棒位置維持在機身邏輯位置（箭頭本身不變動）
+    headingArrow.position.copy(chopper.position);
+
+    // 機身疊在箭頭上的偏移量，由偵錯面板「機身疊箭頭」滑桿即時調整
+    chopper.position.addScaledVector(headingArrowDir, chopperArrowOffsetDebug.value);
 
     // 相機固定不跟隨直升機（位置與朝向由偵錯面板即時調整）
     camera.position.set(camDebug.x, camDebug.y, camDebug.z);
