@@ -438,7 +438,6 @@
 window.controlState = {
   orientData: { alpha: 0, beta: 0, gamma: 0 },
   accelData:  { x: 0, y: 0, z: 0 },
-  rotationRate: { x: 0, y: 0, z: 0 }, // 陀螺儀角速度（deg/s），對應裝置原生 X/Y/Z 軸
   joyH: 0, joyV: 0,
   grabPressed: false,
   alphaOffset: null, // 啟動感測器當下的 alpha，作為機頭正前方的基準
@@ -639,12 +638,6 @@ function onMotion(e) {
     cs.accelData.x = a.x || 0;
     cs.accelData.y = a.y || 0;
     cs.accelData.z = a.z || 0;
-  }
-  const r = e.rotationRate;
-  if (r) {
-    cs.rotationRate.x = r.beta  || 0; // 繞裝置原生 X 軸（deg/s）
-    cs.rotationRate.y = r.gamma || 0; // 繞裝置原生 Y 軸（deg/s）
-    cs.rotationRate.z = r.alpha || 0; // 繞裝置原生 Z 軸（deg/s）
   }
 }
 function startSensors() {
@@ -911,16 +904,12 @@ function approachValue(current, target, delta) {
 }
 
 // ── 陀螺儀 → 四元數姿態 ────────────────────────────────────
-// 校正當下（alphaRel=0）用 alpha/beta/gamma 算一次基準姿態 Q0（一次性，風險低）；
-// 之後改用 devicemotion 的 rotationRate（角速度）逐幀積分相對旋轉 D(t)，
-// 目前姿態 Q(t) = Q0 * D(t)，完全避開 alpha/beta/gamma 在 beta≈90°（直拿手機）的萬向鎖瞬間跳變。
+// 採用 three.js DeviceOrientationControls 的標準作法：
 // Euler('YXZ') 對應 (beta→X 俯仰, alpha→Y 朝向/yaw, -gamma→Z 橫滾)，
 // 再乘上「裝置座標系（Z 朝上）→ three.js 座標系（Y 朝上）」的固定校正（繞 X 軸 -90 度）
 const DEVICE_TO_THREE = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
 const deviceEuler = new THREE.Euler();
 const deviceQuat = new THREE.Quaternion();
-const gyroQuat = new THREE.Quaternion();    // D(t)：陀螺儀角速度積分的相對旋轉，校正當下為單位旋轉
-const deltaRotQuat = new THREE.Quaternion(); // 單幀角速度增量四元數（暫存）
 // 機身旋轉偏移量（由偵錯面板的 X/Y/Z 滑桿即時調整）
 const offsetEuler = new THREE.Euler();
 const offsetQuat = new THREE.Quaternion();
@@ -1004,47 +993,18 @@ function animate() {
   applyCityTransform();
   if (chopperModel) chopperModel.scale.setScalar(chopperBaseScale * chopperDebug.scale);
   if (chopper) {
+    // 陀螺儀 → 機身姿態（俯仰／橫滾／朝向），橫式持握時 beta/gamma 互換校正
     const isLandscapeNow = document.body.classList.contains('landscape');
-
-    // 陀螺儀角速度積分：D(t) 隨每幀角速度旋轉累積，校正當下重置為單位旋轉。
-    // 橫式持握時 X/Y 軸對調（對應 effBeta=-gamma、effGamma=beta 的軸向關係）
-    const wx = THREE.MathUtils.degToRad(isLandscapeNow ? -state.rotationRate.y : state.rotationRate.x);
-    const wy = THREE.MathUtils.degToRad(isLandscapeNow ?  state.rotationRate.x : state.rotationRate.y);
-    const wz = THREE.MathUtils.degToRad(state.rotationRate.z);
-    const wMag = Math.sqrt(wx * wx + wy * wy + wz * wz);
-    if (wMag > 1e-8) {
-      const halfAngle = wMag * delta / 2;
-      const s = Math.sin(halfAngle) / wMag;
-      deltaRotQuat.set(wx * s, wy * s, wz * s, Math.cos(halfAngle));
-      gyroQuat.multiply(deltaRotQuat).normalize();
-    }
-
-    // 校正「搖桿方向座標系」的基準姿態 Q0（開始感測器當下，alphaRel=0 的那一刻，僅算一次）
-    if (state.alphaOffset === null) {
-      initialDeviceQuat = null;
-      initialDeviceQuatInv = null;
-      gyroQuat.identity();
-    } else if (initialDeviceQuat === null) {
-      const effBeta  = isLandscapeNow ? -state.orientData.gamma : state.orientData.beta;
-      const effGamma = isLandscapeNow ?  state.orientData.beta  : state.orientData.gamma;
-      deviceEuler.set(
-        THREE.MathUtils.degToRad(effBeta),
-        0, // alphaRel = 0（校正當下）
-        THREE.MathUtils.degToRad(-effGamma),
-        'YXZ'
-      );
-      initialDeviceQuat = new THREE.Quaternion().setFromEuler(deviceEuler).multiply(DEVICE_TO_THREE);
-      initialDeviceQuatInv = initialDeviceQuat.clone().invert();
-      gyroQuat.identity();
-    }
-
-    // 目前機身姿態 Q(t) = Q0 * D(t)；尚未校正時維持單位旋轉
-    if (initialDeviceQuat) {
-      deviceQuat.copy(initialDeviceQuat).multiply(gyroQuat);
-    } else {
-      deviceQuat.identity();
-    }
-
+    const effBeta  = isLandscapeNow ? -state.orientData.gamma : state.orientData.beta;
+    const effGamma = isLandscapeNow ?  state.orientData.beta  : state.orientData.gamma;
+    const alphaRel = state.orientData.alpha - (state.alphaOffset ?? state.orientData.alpha);
+    deviceEuler.set(
+      THREE.MathUtils.degToRad(effBeta),
+      THREE.MathUtils.degToRad(alphaRel),
+      THREE.MathUtils.degToRad(-effGamma),
+      'YXZ'
+    );
+    deviceQuat.setFromEuler(deviceEuler).multiply(DEVICE_TO_THREE);
     offsetEuler.set(
       THREE.MathUtils.degToRad(chopperRotDebug.x),
       THREE.MathUtils.degToRad(chopperRotDebug.y),
@@ -1053,8 +1013,17 @@ function animate() {
     offsetQuat.setFromEuler(offsetEuler);
     chopper.quaternion.copy(offsetQuat).multiply(deviceQuat);
 
-    // 機身姿態相對於起飛時的變化量：deltaQuat = Q(t) * Q0⁻¹ = Q0 * D(t) * Q0⁻¹
-    // 讓搖桿前後左右的方向跟著機身傾斜旋轉（含上下）
+    // 校正「搖桿方向座標系」的基準姿態（開始感測器當下，alphaRel=0 的那一刻）
+    if (state.alphaOffset === null) {
+      initialDeviceQuat = null;
+      initialDeviceQuatInv = null;
+    } else if (initialDeviceQuat === null) {
+      initialDeviceQuat = deviceQuat.clone();
+      initialDeviceQuatInv = initialDeviceQuat.clone().invert();
+    }
+
+    // 機身姿態相對於起飛時的變化量：讓搖桿前後左右的方向跟著機身傾斜旋轉（含上下）
+    // 尚未校正（無陀螺儀資料）時維持單位旋轉，避免 DEVICE_TO_THREE 的固定校正把方向轉去 Y 軸
     if (initialDeviceQuatInv) {
       deltaQuat.copy(deviceQuat).multiply(initialDeviceQuatInv);
     } else {
@@ -1073,17 +1042,20 @@ function animate() {
     flightForwardXZ.normalize();
     flightRightXZ.normalize();
 
-    // 上下移動：完全由機身傾斜角度（flightForward.y）決定，跟搖桿前後無關
+    // 上下移動：由機身傾斜角度（flightForward.y）決定，但只有搖桿有輸入（水平移動）時才會疊加，
+    // 搖桿放開時飛機完全靜止，不會因為單純傾斜手機而上下漂移
     let vertInput = flightForward.y;
     if (Math.abs(vertInput) < TILT_DEADZONE) vertInput = 0;
+    const joyActive = (state.joyH * state.joyH + state.joyV * state.joyV) > 1e-4;
+    if (!joyActive) vertInput = 0;
 
-    // 搖桿輸入（H=左右、V=前後）只控制水平移動；垂直移動由上方的傾斜角度單獨控制
+    // 搖桿輸入（H=左右、V=前後）控制水平移動；垂直移動由上方的傾斜角度疊加
     targetVel.copy(flightRightXZ).multiplyScalar(state.joyH)
       .addScaledVector(flightForwardXZ, state.joyV)
       .multiplyScalar(MAX_SPEED);
     targetVel.y = vertInput * MAX_SPEED;
 
-    // 更新朝向指示棒：有實際飛行速度（搖桿水平輸入或機身傾斜垂直分量）時指向該方向，否則顯示機身前方
+    // 更新朝向指示棒：有實際飛行速度（搖桿輸入，含其疊加的傾斜垂直分量）時指向該方向，否則顯示機身前方
     headingArrow.position.copy(chopper.position);
     if (targetVel.lengthSq() > 1e-6) {
       headingArrowDir.copy(targetVel).normalize();

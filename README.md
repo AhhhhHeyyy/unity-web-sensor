@@ -269,13 +269,10 @@ void HandleJoystick(Vector2 input)
 ## 更新紀錄 / Changelog
 
 ### 2026-06-12（六）
-**long0610/sensor0610.html — 機身姿態改用陀螺儀角速度積分，避開萬向鎖跳變**
+**long0610/sensor0610.html — 搖桿放開時禁止傾斜造成上下漂移，修正朝向指示棒翻轉**
 
-- 問題根源：`alpha/beta/gamma`（DeviceOrientation Euler 角）在 `beta≈±90°`（直拿手機）時會有萬向鎖，微小傾斜可能讓 `alpha`/`gamma` 瞬間跳變 ~180°，導致機身姿態與朝向指示棒的上下方向瞬間翻轉
-- 改為：校正當下用 `alpha/beta/gamma` 算一次基準姿態 `Q0`（一次性，風險低）；之後改用 `devicemotion.rotationRate`（陀螺儀角速度）逐幀積分出相對旋轉 `D(t)`，完全不經過 Euler 角
-- 目前機身姿態 `Q(t) = Q0 * D(t)`，`deltaQuat = Q(t) * Q0⁻¹` 沿用原本的搖桿座標系／上下飛行／朝向指示棒邏輯
-- 橫式持握時對 `rotationRate` 的 X/Y 軸做對調（對應原本 `effBeta=-gamma`／`effGamma=beta` 的軸向關係）
-- ⚠️ 尚未實機測試：角速度積分的旋轉方向（各軸正負號）、橫式軸對調是否正確，需實機驗證；若瀏覽器不支援 `rotationRate`，機身姿態會凍結在校正當下角度
+- 問題：搖桿放開時，傾斜角度仍會單獨驅動垂直速度，導致飛機在搖桿無輸入時也會因手機傾斜而上下漂移；且此時 `targetVel` 變成純垂直向量，傾斜方向跨越死區時朝向指示棒會在「機身前方」與「正上/正下」之間瞬間切換，呈現 180° 翻轉
+- 改為：新增 `joyActive`（`joyH²+joyV² > 1e-4`）判斷，只有搖桿有水平輸入時，傾斜角度才會疊加垂直速度；搖桿放開時 `vertInput` 強制為 0，`targetVel` 為零向量，朝向指示棒穩定顯示機身前方
 
 ---
 
