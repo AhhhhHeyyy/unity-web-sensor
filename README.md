@@ -268,6 +268,16 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-12（五）
+**long0610/sensor0610.html — 上下飛行改由機身傾斜角度單獨控制**
+
+- 原本搖桿前後（`joyV`）是沿著隨機身傾斜旋轉的 `flightForward` 移動，導致手機朝上傾斜時「後退」反而往下飛，朝向指示棒也會從朝上瞬間翻成朝下，違反直覺
+- 改為：`flightForward`／`flightRight` 先投影到水平面（XZ）得到 `flightForwardXZ`／`flightRightXZ`，搖桿前後左右只用這兩個水平方向換算速度
+- 垂直速度改由 `flightForward.y`（機身傾斜量）直接決定，與搖桿輸入無關；新增 `TILT_DEADZONE = 0.05` 避免微小傾斜造成持續緩慢漂移
+- 朝向指示棒：有實際飛行速度（水平搖桿輸入或垂直傾斜分量）時指向該方向，否則顯示機身前方
+
+---
+
 ### 2026-06-12（四）
 **long0610/sensor0610.html — 朝向指示棒改為顯示實際飛行方向**
 
