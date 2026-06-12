@@ -883,8 +883,9 @@ const RIGHT_AXIS   = new THREE.Vector3(1, 0, 0);  // 對應搖桿 H（右推）
 const flightForward = new THREE.Vector3();
 const flightRight   = new THREE.Vector3();
 const targetVel      = new THREE.Vector3();
+const headingArrowDir = new THREE.Vector3();
 
-// 朝向指示棒：顯示目前「搖桿前推」會飛去的世界方向（陀螺儀校正後的結果）
+// 朝向指示棒：顯示目前搖桿輸入會飛去的實際方向（無輸入時顯示機身前方）
 const headingArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 3, 0xffcc00, 0.8, 0.4);
 scene.add(headingArrow);
 
@@ -1028,14 +1029,19 @@ function animate() {
     flightForward.copy(FORWARD_AXIS).applyQuaternion(deltaQuat);
     flightRight.copy(RIGHT_AXIS).applyQuaternion(deltaQuat);
 
-    // 更新朝向指示棒：從機身位置指向目前的「搖桿前推」方向
-    headingArrow.position.copy(chopper.position);
-    headingArrow.setDirection(flightForward);
-
     // 搖桿輸入（H=左右、V=前後）依目前的「搖桿方向座標系」換算成世界座標目標速度
     targetVel.copy(flightRight).multiplyScalar(state.joyH)
       .addScaledVector(flightForward, state.joyV)
       .multiplyScalar(MAX_SPEED);
+
+    // 更新朝向指示棒：有搖桿輸入時指向實際飛行方向（含上下），否則顯示機身前方
+    headingArrow.position.copy(chopper.position);
+    if (targetVel.lengthSq() > 1e-6) {
+      headingArrowDir.copy(targetVel).normalize();
+    } else {
+      headingArrowDir.copy(flightForward);
+    }
+    headingArrow.setDirection(headingArrowDir);
 
     velocity.x = approachValue(velocity.x, targetVel.x, delta);
     velocity.y = approachValue(velocity.y, targetVel.y, delta);

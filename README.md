@@ -268,6 +268,14 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-12（四）
+**long0610/sensor0610.html — 朝向指示棒改為顯示實際飛行方向**
+
+- 原本朝向指示棒（`headingArrow`）固定指向機身前方 `flightForward`，但搖桿往後推時，實際飛行方向（含上下）是 `flightForward` 的反方向，導致箭頭朝向與實際移動的上下方向相反
+- 改為：先計算 `targetVel`（搖桿輸入換算後的目標飛行速度），有輸入時箭頭方向改為 `targetVel` 正規化後的方向；無輸入時維持顯示機身前方 `flightForward` 作為預設參考
+
+---
+
 ### 2026-06-12（三）
 **sensor.html — 直式模式按鈕排版調整；long0610 直升機改用陀螺儀四元數姿態控制**
 
