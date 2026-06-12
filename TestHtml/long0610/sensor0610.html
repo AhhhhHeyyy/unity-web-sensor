@@ -862,6 +862,7 @@ const movePos = new THREE.Vector3(0, 0, 0); // 飛行範圍內的相對位置（
 const MAX_SPEED  = 1.6;  // 最大移動速度（單位／秒）
 const ACCEL      = 10;   // 推搖桿／陀螺儀輔助時的加速反應速度
 const DAMPING    = 3;    // 放開搖桿後的減速阻尼（越大停得越快）
+const TILT_DEADZONE = 0.05; // 上下飛行的傾斜死區（|flightForward.y| 小於此值視為 0）
 
 // 機身旋轉偏移量（度），即時數值由「偵錯面板」的旋轉滑桿控制（window.chopperRotDebug）
 // 預設 Y=-90 對應原本寫死的 BASE_YAW：模型靜止時面向 -X，偏移後改為面向正前方（畫面內側 -Z）
@@ -882,8 +883,11 @@ const FORWARD_AXIS = new THREE.Vector3(0, 0, -1); // 對應搖桿 V（前推）
 const RIGHT_AXIS   = new THREE.Vector3(1, 0, 0);  // 對應搖桿 H（右推）
 const flightForward = new THREE.Vector3();
 const flightRight   = new THREE.Vector3();
+const flightForwardXZ = new THREE.Vector3(); // flightForward 在水平面的投影（搖桿前後方向）
+const flightRightXZ   = new THREE.Vector3(); // flightRight 在水平面的投影（搖桿左右方向）
 const targetVel      = new THREE.Vector3();
 const headingArrowDir = new THREE.Vector3();
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
 
 // 朝向指示棒：顯示目前搖桿輸入會飛去的實際方向（無輸入時顯示機身前方）
 const headingArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 3, 0xffcc00, 0.8, 0.4);
@@ -1029,12 +1033,26 @@ function animate() {
     flightForward.copy(FORWARD_AXIS).applyQuaternion(deltaQuat);
     flightRight.copy(RIGHT_AXIS).applyQuaternion(deltaQuat);
 
-    // 搖桿輸入（H=左右、V=前後）依目前的「搖桿方向座標系」換算成世界座標目標速度
-    targetVel.copy(flightRight).multiplyScalar(state.joyH)
-      .addScaledVector(flightForward, state.joyV)
-      .multiplyScalar(MAX_SPEED);
+    // 水平移動方向：取 flightForward / flightRight 在水平面（XZ）的投影，
+    // 傾斜角度過大導致某一軸投影接近 0 時，用另一軸的水平投影推導（互相垂直）
+    flightForwardXZ.set(flightForward.x, 0, flightForward.z);
+    flightRightXZ.set(flightRight.x, 0, flightRight.z);
+    if (flightForwardXZ.lengthSq() < 1e-6) flightForwardXZ.crossVectors(UP_AXIS, flightRightXZ);
+    if (flightRightXZ.lengthSq()   < 1e-6) flightRightXZ.crossVectors(flightForwardXZ, UP_AXIS);
+    flightForwardXZ.normalize();
+    flightRightXZ.normalize();
 
-    // 更新朝向指示棒：有搖桿輸入時指向實際飛行方向（含上下），否則顯示機身前方
+    // 上下移動：完全由機身傾斜角度（flightForward.y）決定，跟搖桿前後無關
+    let vertInput = flightForward.y;
+    if (Math.abs(vertInput) < TILT_DEADZONE) vertInput = 0;
+
+    // 搖桿輸入（H=左右、V=前後）只控制水平移動；垂直移動由上方的傾斜角度單獨控制
+    targetVel.copy(flightRightXZ).multiplyScalar(state.joyH)
+      .addScaledVector(flightForwardXZ, state.joyV)
+      .multiplyScalar(MAX_SPEED);
+    targetVel.y = vertInput * MAX_SPEED;
+
+    // 更新朝向指示棒：有實際飛行速度（搖桿水平輸入或機身傾斜垂直分量）時指向該方向，否則顯示機身前方
     headingArrow.position.copy(chopper.position);
     if (targetVel.lengthSq() > 1e-6) {
       headingArrowDir.copy(targetVel).normalize();
