@@ -268,6 +268,17 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-12（六）
+**long0610/sensor0610.html — 機身姿態改用陀螺儀角速度積分，避開萬向鎖跳變**
+
+- 問題根源：`alpha/beta/gamma`（DeviceOrientation Euler 角）在 `beta≈±90°`（直拿手機）時會有萬向鎖，微小傾斜可能讓 `alpha`/`gamma` 瞬間跳變 ~180°，導致機身姿態與朝向指示棒的上下方向瞬間翻轉
+- 改為：校正當下用 `alpha/beta/gamma` 算一次基準姿態 `Q0`（一次性，風險低）；之後改用 `devicemotion.rotationRate`（陀螺儀角速度）逐幀積分出相對旋轉 `D(t)`，完全不經過 Euler 角
+- 目前機身姿態 `Q(t) = Q0 * D(t)`，`deltaQuat = Q(t) * Q0⁻¹` 沿用原本的搖桿座標系／上下飛行／朝向指示棒邏輯
+- 橫式持握時對 `rotationRate` 的 X/Y 軸做對調（對應原本 `effBeta=-gamma`／`effGamma=beta` 的軸向關係）
+- ⚠️ 尚未實機測試：角速度積分的旋轉方向（各軸正負號）、橫式軸對調是否正確，需實機驗證；若瀏覽器不支援 `rotationRate`，機身姿態會凍結在校正當下角度
+
+---
+
 ### 2026-06-12（五）
 **long0610/sensor0610.html — 上下飛行改由機身傾斜角度單獨控制**
 
