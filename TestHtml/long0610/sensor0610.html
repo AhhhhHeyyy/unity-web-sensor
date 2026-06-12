@@ -83,13 +83,19 @@
     border: 1px solid #444; background: #111; color: #888; font-size: 0.78rem;
   }
   #three-wrap {
+    position: relative;
     width: min(280px, 38dvh, 80vw);
     height: min(280px, 38dvh, 80vw);
     margin: clamp(8px, 2dvh, 20px) auto;
     border-radius: 14px; overflow: hidden;
     background: #111;
   }
-  #three-wrap canvas { display: block; width: 100%; height: 100%; }
+  #three-wrap canvas { display: block; width: 100%; height: 100%; position: relative; z-index: 1; background: transparent; }
+  #camera-bg {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover; z-index: 0;
+  }
   #disconnect-btn {
     padding: 10px 0; width: 100%; border-radius: 10px; border: 1px solid #555;
     background: transparent; color: #aaa; font-size: 0.9rem; cursor: pointer;
@@ -261,7 +267,9 @@
   <!-- 上半：顯示層 -->
   <div id="display-half">
     <h2><span class="status-dot"></span>即時顯示中</h2>
-    <div id="three-wrap"></div>
+    <div id="three-wrap">
+      <video id="camera-bg" autoplay playsinline muted></video>
+    </div>
   </div>
 
   <!-- 浮動偵錯面板：感測器數值 + 相機調整，預設隱藏，不佔版面 -->
@@ -366,8 +374,8 @@
       </div>
       <div class="cam-row">
         <label for="chopper-x">飛機初始X</label>
-        <input type="range" id="chopper-x" min="-20" max="20" step="0.1" value="-3.9">
-        <span id="chopper-x-val">-3.9</span>
+        <input type="range" id="chopper-x" min="-20" max="20" step="0.1" value="0">
+        <span id="chopper-x-val">0</span>
         <input type="number" class="cam-max" id="chopper-x-max" value="20" step="1">
       </div>
       <div class="cam-row">
@@ -378,14 +386,14 @@
       </div>
       <div class="cam-row">
         <label for="chopper-z">飛機初始Z</label>
-        <input type="range" id="chopper-z" min="-30" max="30" step="0.1" value="29.6">
-        <span id="chopper-z-val">29.6</span>
+        <input type="range" id="chopper-z" min="-30" max="30" step="0.1" value="0">
+        <span id="chopper-z-val">0</span>
         <input type="number" class="cam-max" id="chopper-z-max" value="30" step="1">
       </div>
       <div class="cam-row">
         <label for="chopper-rot-x">機身旋轉X</label>
-        <input type="range" id="chopper-rot-x" min="-180" max="180" step="1" value="0">
-        <span id="chopper-rot-x-val">0</span>
+        <input type="range" id="chopper-rot-x" min="-180" max="180" step="1" value="-168">
+        <span id="chopper-rot-x-val">-168</span>
         <input type="number" class="cam-max" id="chopper-rot-x-max" value="180" step="1">
       </div>
       <div class="cam-row">
@@ -396,8 +404,8 @@
       </div>
       <div class="cam-row">
         <label for="chopper-rot-z">機身旋轉Z</label>
-        <input type="range" id="chopper-rot-z" min="-180" max="180" step="1" value="0">
-        <span id="chopper-rot-z-val">0</span>
+        <input type="range" id="chopper-rot-z" min="-180" max="180" step="1" value="-168">
+        <span id="chopper-rot-z-val">-168</span>
         <input type="number" class="cam-max" id="chopper-rot-z-max" value="180" step="1">
       </div>
     </div>
@@ -545,7 +553,7 @@ window.chopperDebug = { scale: 1.2 };
 }
 
 // ── 直升機初始位置（即時調整，疊加在搖桿移動範圍之外）──────
-window.chopperPosDebug = { x: -3.9, y: 0, z: 29.6 };
+window.chopperPosDebug = { x: 0, y: 0, z: 0 };
 [
   ['chopper-x', 'x'],
   ['chopper-y', 'y'],
@@ -569,7 +577,7 @@ window.chopperPosDebug = { x: -3.9, y: 0, z: 29.6 };
 });
 
 // ── 機身旋轉偏移量（度，即時調整，預設 Y=-90 對應原本的 BASE_YAW）───
-window.chopperRotDebug = { x: 0, y: -90, z: 0 };
+window.chopperRotDebug = { x: -168, y: -90, z: -168 };
 [
   ['chopper-rot-x', 'x'],
   ['chopper-rot-y', 'y'],
@@ -598,6 +606,19 @@ function show(id) {
     document.getElementById(s).classList.toggle('hidden', s !== id));
 }
 
+// ── 開啟手機後置鏡頭，作為背景顯示 ──────────────────────────
+async function startCameraBackground() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    document.getElementById('camera-bg').srcObject = stream;
+  } catch (e) {
+    console.warn('無法開啟相機：', e.message);
+  }
+}
+
 // ── iOS 權限按鈕 ──────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click', async () => {
   if (typeof DeviceOrientationEvent !== 'undefined' &&
@@ -615,6 +636,7 @@ document.getElementById('btn-start').addEventListener('click', async () => {
     }
   }
   startSensors();
+  startCameraBackground();
   show('screen-live');
   tryWakeLock();
   tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
@@ -840,7 +862,7 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(0, 4, 9);
 camera.lookAt(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 wrap.appendChild(renderer.domElement);
 
@@ -887,6 +909,7 @@ const flightForwardXZ = new THREE.Vector3(); // flightForward 在水平面的投
 const flightRightXZ   = new THREE.Vector3(); // flightRight 在水平面的投影（搖桿左右方向）
 const targetVel      = new THREE.Vector3();
 const headingArrowDir = new THREE.Vector3();
+const headingQuat = new THREE.Quaternion(); // 機身顯示朝向：對齊朝向指示棒方向
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 
 // 朝向指示棒：顯示目前搖桿輸入會飛去的實際方向（無輸入時顯示機身前方）
@@ -943,6 +966,7 @@ new GLTFLoader().load('city-street_free_for_game.glb', gltf => {
   cityObj = obj;
   applyCityTransform();
 
+  obj.visible = false;
   scene.add(obj);
 });
 
@@ -1011,7 +1035,6 @@ function animate() {
       THREE.MathUtils.degToRad(chopperRotDebug.z)
     );
     offsetQuat.setFromEuler(offsetEuler);
-    chopper.quaternion.copy(offsetQuat).multiply(deviceQuat);
 
     // 校正「搖桿方向座標系」的基準姿態（開始感測器當下，alphaRel=0 的那一刻）
     if (state.alphaOffset === null) {
@@ -1064,6 +1087,10 @@ function animate() {
     }
     headingArrow.setDirection(headingArrowDir);
 
+    // 機身顯示朝向跟隨朝向指示棒（飛行方向），offsetQuat 維持模型的基準校正
+    headingQuat.setFromUnitVectors(FORWARD_AXIS, headingArrowDir);
+    chopper.quaternion.copy(headingQuat).multiply(offsetQuat);
+
     velocity.x = approachValue(velocity.x, targetVel.x, delta);
     velocity.y = approachValue(velocity.y, targetVel.y, delta);
     velocity.z = approachValue(velocity.z, targetVel.z, delta);
@@ -1086,17 +1113,9 @@ function animate() {
     chopper.position.y = movePos.y + chopperPosDebug.y;
     chopper.position.z = movePos.z + chopperPosDebug.z;
 
-    // 相機跟隨直升機（偏移量由偵錯面板即時調整）
-    camera.position.set(
-      chopper.position.x + camDebug.x,
-      chopper.position.y + camDebug.y,
-      chopper.position.z + camDebug.z
-    );
-    camera.lookAt(
-      chopper.position.x + camDebug.lookX,
-      chopper.position.y + camDebug.lookY,
-      chopper.position.z + camDebug.lookZ
-    );
+    // 相機固定不跟隨直升機（位置與朝向由偵錯面板即時調整）
+    camera.position.set(camDebug.x, camDebug.y, camDebug.z);
+    camera.lookAt(camDebug.lookX, camDebug.lookY, camDebug.lookZ);
 
     if (camera.zoom !== camDebug.zoom) {
       camera.zoom = camDebug.zoom;
