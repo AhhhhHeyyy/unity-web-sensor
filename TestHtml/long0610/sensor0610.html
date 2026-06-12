@@ -249,8 +249,8 @@
 </head>
 <body>
 
-<!-- 畫面1：請求感測器權限 -->
-<div id="screen-permission">
+<!-- 畫面1：請求感測器權限（已自動觸發，不顯示） -->
+<div id="screen-permission" class="hidden">
   <h2>感測器即時顯示</h2>
   <p>點下方按鈕授予感測器權限，即可在畫面上即時看到陀螺儀旋轉與搖桿位移數值。</p>
   <button class="btn" id="btn-start">開始顯示</button>
@@ -258,7 +258,7 @@
 </div>
 
 <!-- 畫面2：即時顯示 -->
-<div id="screen-live" class="hidden">
+<div id="screen-live">
   <button id="orient-btn">切換橫式</button>
   <button id="debug-toggle">調整面板</button>
 
@@ -701,20 +701,16 @@ async function startCameraBackground() {
   }
 }
 
-// ── iOS 權限按鈕 ──────────────────────────────────────────
-document.getElementById('btn-start').addEventListener('click', async () => {
+// ── 啟動（自動執行，不再顯示權限畫面）───────────────────────
+async function startApp() {
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
       const r1 = await DeviceOrientationEvent.requestPermission();
       const r2 = await DeviceMotionEvent.requestPermission();
-      if (r1 !== 'granted' || r2 !== 'granted') {
-        document.getElementById('perm-err').textContent = '請允許感測器權限';
-        return;
-      }
+      if (r1 !== 'granted' || r2 !== 'granted') return false;
     } catch(e) {
-      document.getElementById('perm-err').textContent = '權限請求失敗：' + e.message;
-      return;
+      return false; // iOS 需要使用者手勢才能請求權限，等待第一次互動再重試
     }
   }
   startSensors();
@@ -724,6 +720,16 @@ document.getElementById('btn-start').addEventListener('click', async () => {
   tryLockOrientation(isLandscape ? 'landscape-primary' : 'portrait-primary');
   requestAnimationFrame(updateJoyMax);
   startDisplayLoop();
+  return true;
+}
+
+show('screen-live');
+startApp().then(ok => {
+  if (ok) return;
+  // iOS 需要使用者手勢才能請求感測器權限：等待第一次點擊/觸碰後重試
+  const retry = () => { startApp(); };
+  document.addEventListener('click', retry, { once: true });
+  document.addEventListener('touchstart', retry, { once: true });
 });
 
 // ── 感測器監聽 ────────────────────────────────────────────
@@ -909,7 +915,7 @@ document.getElementById('disconnect-btn').addEventListener('click', () => {
   cs.alphaOffset = null;
   cs.betaOffset = null;
   cs.gammaOffset = null;
-  show('screen-permission');
+  startApp(); // 不再切回權限畫面，直接重新啟動感測器
 });
 
 // ── 橫直切換 ──────────────────────────────────────────────
@@ -996,6 +1002,7 @@ const flightForwardXZ = new THREE.Vector3(); // flightForward 在水平面的投
 const flightRightXZ   = new THREE.Vector3(); // flightRight 在水平面的投影（搖桿左右方向）
 const targetVel      = new THREE.Vector3();
 const headingArrowDir = new THREE.Vector3();
+const smoothedHeadingDir = new THREE.Vector3(0, 0, -1); // 朝向指示棒方向的平滑值，避免搖桿瞬間轉向造成機身瞬間旋轉/位移
 const headingQuat = new THREE.Quaternion(); // 機身顯示朝向：對齊朝向指示棒方向
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -1185,9 +1192,14 @@ function animate() {
     }
     headingArrow.setDirection(headingArrowDir);
 
+    // 朝向方向先做平滑（lerp），避免搖桿瞬間轉向時方向本身瞬間跳變，
+    // 機身旋轉與位置偏移都改用這個平滑後的方向
+    smoothedHeadingDir.lerp(headingArrowDir, Math.min(1, TURN_DAMPING * delta));
+    if (smoothedHeadingDir.lengthSq() > 1e-6) smoothedHeadingDir.normalize();
+
     // 機身顯示朝向跟隨朝向指示棒（飛行方向），offsetQuat 維持模型的基準校正
     // 用 slerp 加阻尼，避免搖桿瞬間轉向時機身角度突然跳變
-    headingQuat.setFromUnitVectors(FORWARD_AXIS, headingArrowDir).multiply(offsetQuat);
+    headingQuat.setFromUnitVectors(FORWARD_AXIS, smoothedHeadingDir).multiply(offsetQuat);
     chopper.quaternion.slerp(headingQuat, Math.min(1, TURN_DAMPING * delta));
 
     velocity.x = approachValue(velocity.x, targetVel.x, delta);
@@ -1215,8 +1227,8 @@ function animate() {
     // 朝向指示棒位置維持在機身邏輯位置（箭頭本身不變動）
     headingArrow.position.copy(chopper.position);
 
-    // 機身疊在箭頭上的偏移量，由偵錯面板「機身疊箭頭」滑桿即時調整
-    chopper.position.addScaledVector(headingArrowDir, chopperArrowOffsetDebug.value);
+    // 機身疊在箭頭上的偏移量，由偵錯面板「機身疊箭頭」滑桿即時調整（用平滑後方向避免瞬間位移）
+    chopper.position.addScaledVector(smoothedHeadingDir, chopperArrowOffsetDebug.value);
 
     // 相機固定不跟隨直升機（位置與朝向由偵錯面板即時調整）
     camera.position.set(camDebug.x, camDebug.y, camDebug.z);
