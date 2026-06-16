@@ -1267,6 +1267,8 @@ function animate() {
 const _startXR = () => {
   window._xrActive = true;
   document.getElementById('camera-bg').style.display = 'none';
+  // AR 模式預設錨點：前方 1.5m、略低於鏡頭，讓直升機不至於頂在臉前
+  arAnchorPos.set(0, -0.3, -1.5);
 
   const chopperARModule = {
     name: 'chopperAR',
