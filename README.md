@@ -268,6 +268,19 @@ void HandleJoystick(Vector2 input)
 
 ## 更新紀錄 / Changelog
 
+### 2026-06-16
+**long0610/sensor0610.html — 導入 8thWall AR 地板偵測，直升機初始位置錨定真實地板**
+
+- 整合 `@8thwall/engine-binary`（jsdelivr CDN，無需 API Key）提供跨平台 SLAM 地板偵測，支援 iOS Safari 與 Android Chrome
+- 新增 `data-preload-chunks="slam"` 預載 SLAM 模組，頁面載入即開始環境掃描
+- 實作 8thWall Camera Pipeline Module：每幀從 `processCpuResult.reality` 取得相機位姿（position + quaternion）驅動 Three.js camera，讓 3D 場景正確疊合真實世界
+- 新增綠色 Reticle 圓環（`THREE.RingGeometry`）作為地板偵測指示器：觸碰螢幕時呼叫 `XR8.XrController.hitTest()` 更新 Reticle 位置，放開手指後直升機錨定至該位置上方 0.3m
+- 長按螢幕 2 秒可重置放置位置，重新選點
+- `arAnchorPos` 偏移疊加到原有的 `movePos + chopperPosDebug`，搖桿與陀螺儀控制邏輯完全不受影響
+- AR 模式啟動時隱藏 `#camera-bg` video（改由 `XR8.GlTextureRenderer` 渲染鏡頭背景）；8thWall 未載入時（桌機/網路問題）3 秒後自動 fallback 至原有動畫迴圈
+
+---
+
 ### 2026-06-12（六）
 **long0610/sensor0610.html — 搖桿放開時禁止傾斜造成上下漂移，修正朝向指示棒翻轉**
 

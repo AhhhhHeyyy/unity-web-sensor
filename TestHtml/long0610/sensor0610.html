@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>感測器即時顯示</title>
+<script async src="https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1/dist/xr.js" data-preload-chunks="slam"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -690,6 +691,8 @@ function show(id) {
 
 // ── 開啟手機後置鏡頭，作為背景顯示 ──────────────────────────
 async function startCameraBackground() {
+  // 8thWall AR 模式接管鏡頭時跳過 getUserMedia
+  if (window.XR8) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' } },
@@ -959,6 +962,17 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(3, 5, 2);
 scene.add(dirLight);
 
+// ── AR 地板偵測：錨點與 Reticle ────────────────────────────
+let arAnchorPos = new THREE.Vector3(0, 0, 0);
+let arPlaced = false;
+
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.08, 0.12, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide })
+);
+reticle.visible = false;
+scene.add(reticle);
+
 // 搖桿可移動的範圍（世界座標單位）
 // 即時數值由「偵錯面板」的移動範圍滑桿控制（window.moveRangeDebug）
 const POS_RANGE_X = 2.0; // 左右（城市場景縮放計算用，固定初始值）
@@ -1109,7 +1123,7 @@ resize();
 
 const clock = new THREE.Clock();
 function animate() {
-  requestAnimationFrame(animate);
+  // requestAnimationFrame 由 8thWall pipeline 的 onRender 驅動，此處不自行呼叫
   const delta = clock.getDelta();
   if (mixer) mixer.update(delta);
   applyCityTransform();
@@ -1219,10 +1233,10 @@ function animate() {
     if (nextY !== movePos.y) velocity.y = 0;
     if (nextZ !== movePos.z) velocity.z = 0;
 
-    // 套用「飛機初始位置」偏移（移動範圍以此為中心）
-    chopper.position.x = movePos.x + chopperPosDebug.x;
-    chopper.position.y = movePos.y + chopperPosDebug.y;
-    chopper.position.z = movePos.z + chopperPosDebug.z;
+    // 套用「飛機初始位置」偏移（移動範圍以此為中心）+ AR 地板錨點
+    chopper.position.x = arAnchorPos.x + movePos.x + chopperPosDebug.x;
+    chopper.position.y = arAnchorPos.y + movePos.y + chopperPosDebug.y;
+    chopper.position.z = arAnchorPos.z + movePos.z + chopperPosDebug.z;
 
     // 朝向指示棒位置維持在機身邏輯位置（箭頭本身不變動）
     headingArrow.position.copy(chopper.position);
@@ -1230,18 +1244,100 @@ function animate() {
     // 機身疊在箭頭上的偏移量，由偵錯面板「機身疊箭頭」滑桿即時調整（用平滑後方向避免瞬間位移）
     chopper.position.addScaledVector(smoothedHeadingDir, chopperArrowOffsetDebug.value);
 
-    // 相機固定不跟隨直升機（位置與朝向由偵錯面板即時調整）
-    camera.position.set(camDebug.x, camDebug.y, camDebug.z);
-    camera.lookAt(camDebug.lookX, camDebug.lookY, camDebug.lookZ);
-
-    if (camera.zoom !== camDebug.zoom) {
-      camera.zoom = camDebug.zoom;
-      camera.updateProjectionMatrix();
+    // 相機固定不跟隨直升機（AR 模式下相機由 8thWall 追蹤接管）
+    if (!window._xrActive) {
+      camera.position.set(camDebug.x, camDebug.y, camDebug.z);
+      camera.lookAt(camDebug.lookX, camDebug.lookY, camDebug.lookZ);
+      if (camera.zoom !== camDebug.zoom) {
+        camera.zoom = camDebug.zoom;
+        camera.updateProjectionMatrix();
+      }
     }
   }
   renderer.render(scene, camera);
 }
-animate();
+// ── 8thWall AR Pipeline ──────────────────────────────────────
+const _startXR = () => {
+  window._xrActive = true;
+  document.getElementById('camera-bg').style.display = 'none';
+
+  const chopperARModule = {
+    name: 'chopperAR',
+
+    // Three.js camera ← 8thWall SLAM 追蹤資料（每幀更新）
+    onUpdate: ({ processCpuResult }) => {
+      if (!processCpuResult.reality) return;
+      const { rotation: r, position: p, intrinsics } = processCpuResult.reality;
+      camera.position.set(p.x, p.y, p.z);
+      camera.quaternion.set(r.x, r.y, r.z, r.w);
+      if (intrinsics) {
+        camera.projectionMatrix.fromArray(intrinsics);
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+      }
+    },
+
+    // 每幀渲染：呼叫現有 animate 邏輯
+    onRender: () => { animate(); },
+  };
+
+  // 觸碰螢幕 → SLAM hit-test 取得地板座標 → 更新 reticle
+  renderer.domElement.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = renderer.domElement.getBoundingClientRect();
+    const nX = (touch.clientX - rect.left) / rect.width;
+    const nY = (touch.clientY - rect.top) / rect.height;
+    const hits = XR8.XrController.hitTest(nX, nY, { DETECTED_SURFACE: true });
+    if (hits && hits.length > 0) {
+      const { position: hp } = hits[0];
+      reticle.position.set(hp.x, hp.y, hp.z);
+      reticle.visible = true;
+    } else {
+      reticle.visible = false;
+    }
+  }, { passive: false });
+
+  // 放開手指 → 確認放置直升機
+  renderer.domElement.addEventListener('touchend', () => {
+    if (reticle.visible && !arPlaced) {
+      arAnchorPos.copy(reticle.position);
+      arAnchorPos.y += 0.3; // 離地 0.3m 懸停
+      arPlaced = true;
+      reticle.visible = false;
+    }
+  });
+
+  // 長按 2 秒 → 重置放置位置
+  let _holdTimer = null;
+  renderer.domElement.addEventListener('touchstart', () => {
+    _holdTimer = setTimeout(() => { arPlaced = false; reticle.visible = false; }, 2000);
+  });
+  renderer.domElement.addEventListener('touchend', () => clearTimeout(_holdTimer));
+
+  XR8.addCameraPipelineModules([
+    XR8.GlTextureRenderer.pipelineModule(), // 渲染相機畫面到背景
+    XR8.XrController.pipelineModule(),       // SLAM 世界追蹤
+    chopperARModule,                         // Three.js 橋接模組
+  ]);
+
+  XR8.run({ canvas: renderer.domElement });
+};
+
+// 8thWall 已載入 → 直接啟動；否則等待 xrloaded 事件
+// Fallback：3 秒後仍未啟動 AR（桌機/網路問題）→ 維持原有動畫迴圈
+if (window.XR8) {
+  _startXR();
+} else {
+  window.addEventListener('xrloaded', _startXR);
+  setTimeout(() => {
+    if (!window._xrActive) {
+      requestAnimationFrame(function _fallbackLoop() {
+        animate();
+        requestAnimationFrame(_fallbackLoop);
+      });
+    }
+  }, 3000);
+}
 </script>
 </body>
 </html>
