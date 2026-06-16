@@ -955,6 +955,7 @@ camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.autoClear = false; // 8thWall AR 模式：防止每幀自動清除 GL 緩衝（會蓋掉相機畫面）
 wrap.appendChild(renderer.domElement);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -1253,6 +1254,12 @@ function animate() {
         camera.updateProjectionMatrix();
       }
     }
+  }
+  // AR 模式：只清 depth buffer，保留 8thWall 畫好的相機畫面；非 AR 全清
+  if (window._xrActive) {
+    renderer.clearDepth();
+  } else {
+    renderer.clear();
   }
   renderer.render(scene, camera);
 }
