@@ -1267,10 +1267,15 @@ function animate() {
 const _startXR = () => {
   window._xrActive = true;
   document.getElementById('camera-bg').style.display = 'none';
-  // AR 模式預設錨點：前方 3m、略低於鏡頭，讓直升機保持適當觀看距離
-  arAnchorPos.set(0, -0.3, -3.0);
-  // AR 模式縮小直升機，配合更遠的距離
+  // AR 模式縮小直升機
   window.chopperDebug.scale = 0.7;
+
+  // 操作提示：告知用戶要點按地板
+  const _arHint = document.createElement('div');
+  _arHint.id = 'ar-place-hint';
+  _arHint.style.cssText = 'position:fixed;bottom:220px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#fff;padding:12px 24px;border-radius:24px;font-size:16px;pointer-events:none;z-index:9999;white-space:nowrap;';
+  _arHint.textContent = '請對準地板，點按螢幕放置直升機';
+  document.body.appendChild(_arHint);
 
   const chopperARModule = {
     name: 'chopperAR',
@@ -1285,44 +1290,45 @@ const _startXR = () => {
         camera.projectionMatrix.fromArray(intrinsics);
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
       }
+      // 未放置時：持續偵測螢幕中央地板，讓 reticle 自動浮在地板上
+      if (!arPlaced) {
+        const _ch = XR8.XrController.hitTest(0.5, 0.5, { DETECTED_SURFACE: true });
+        if (_ch && _ch.length > 0) {
+          reticle.position.set(_ch[0].position.x, _ch[0].position.y, _ch[0].position.z);
+          reticle.visible = true;
+        } else {
+          reticle.visible = false;
+        }
+      }
     },
 
     // 每幀渲染：呼叫現有 animate 邏輯
     onRender: () => { animate(); },
   };
 
-  // 觸碰螢幕 → SLAM hit-test 取得地板座標 → 更新 reticle
-  renderer.domElement.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const rect = renderer.domElement.getBoundingClientRect();
-    const nX = (touch.clientX - rect.left) / rect.width;
-    const nY = (touch.clientY - rect.top) / rect.height;
-    const hits = XR8.XrController.hitTest(nX, nY, { DETECTED_SURFACE: true });
-    if (hits && hits.length > 0) {
-      const { position: hp } = hits[0];
-      reticle.position.set(hp.x, hp.y, hp.z);
-      reticle.visible = true;
-    } else {
-      reticle.visible = false;
-    }
-  }, { passive: false });
-
-  // 放開手指 → 確認放置直升機
-  renderer.domElement.addEventListener('touchend', () => {
+  // 點按螢幕 → 放置直升機到 reticle 位置（reticle 由 onUpdate 即時更新）
+  renderer.domElement.addEventListener('touchend', (e) => {
+    // 避免觸碰搖桿區域時也觸發（搖桿在右下，reticle 需可見才放置）
     if (reticle.visible && !arPlaced) {
       arAnchorPos.copy(reticle.position);
       arAnchorPos.y += 0.3; // 離地 0.3m 懸停
       arPlaced = true;
       reticle.visible = false;
+      const h = document.getElementById('ar-place-hint');
+      if (h) h.style.display = 'none';
     }
   });
 
   // 長按 2 秒 → 重置放置位置
   let _holdTimer = null;
-  renderer.domElement.addEventListener('touchstart', () => {
-    _holdTimer = setTimeout(() => { arPlaced = false; reticle.visible = false; }, 2000);
-  });
+  renderer.domElement.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    _holdTimer = setTimeout(() => {
+      arPlaced = false;
+      const h = document.getElementById('ar-place-hint');
+      if (h) h.style.display = '';
+    }, 2000);
+  }, { passive: false });
   renderer.domElement.addEventListener('touchend', () => clearTimeout(_holdTimer));
 
   XR8.addCameraPipelineModules([
