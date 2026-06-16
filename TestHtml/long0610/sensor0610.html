@@ -1311,7 +1311,8 @@ const _startXR = () => {
     // 避免觸碰搖桿區域時也觸發（搖桿在右下，reticle 需可見才放置）
     if (reticle.visible && !arPlaced) {
       arAnchorPos.copy(reticle.position);
-      arAnchorPos.y += 0.3; // 離地 0.3m 懸停
+      // chopperPosDebug.y 會疊加在 arAnchorPos 上，需先扣掉才能讓飛機剛好在地板上方 0.3m
+      arAnchorPos.y += 0.3 - chopperPosDebug.y;
       arPlaced = true;
       reticle.visible = false;
       const h = document.getElementById('ar-place-hint');
