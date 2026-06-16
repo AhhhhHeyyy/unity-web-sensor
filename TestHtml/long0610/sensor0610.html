@@ -1312,7 +1312,7 @@ const _startXR = () => {
     if (reticle.visible && !arPlaced) {
       arAnchorPos.copy(reticle.position);
       // chopperPosDebug.y 會疊加在 arAnchorPos 上，需先扣掉才能讓飛機剛好在地板上方 0.3m
-      arAnchorPos.y += 0.3 - chopperPosDebug.y;
+      arAnchorPos.y += 0.05 - chopperPosDebug.y;
       arPlaced = true;
       reticle.visible = false;
       const h = document.getElementById('ar-place-hint');
